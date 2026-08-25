@@ -128,6 +128,13 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** deterministic one-form canonicalization is what makes UNIQUE(url) idempotence real; stripping campaign noise matches how people actually re-save pages.
 - **Consequence:** exotic equivalences (e.g. percent-encoding variants) are NOT unified in v1; revisit only if real dupes appear.
 
+## ADR-0019 — MCP tool inputs are snake_case, 1:1 with the REST API
+
+- **Date:** 2026-08-25
+- **Decision:** MCP tool schemas mirror the REST API field names exactly (`account_id`, `due_date`, `recurrence_rule`) instead of translating camelCase↔snake_case. `mcp-tools.md`'s earlier camelCase rule is amended. The server also upgrades array-typed fields (meal items, workout exercises) from agent-friendly JSON arrays to the wire format the Go API accepts.
+- **Why:** every translation layer is a bug surface; LLMs read snake_case schemas fine; 1:1 mapping means openapi.json remains the single source of truth for both REST and MCP shapes.
+- **Consequence:** if the API renames a field, the MCP schema changes with it — acceptable at this scale; a generator could be adopted later.
+
 ---
 
 Template for the next ADR:

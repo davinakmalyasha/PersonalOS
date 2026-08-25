@@ -1,0 +1,21 @@
+{
+  "name": "personal-os-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "description": "personal-os MCP server — agent tools over the Go API",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": { "personal-os-mcp": "dist/index.js" },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.3"
+  }
+}

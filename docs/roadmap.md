@@ -82,13 +82,13 @@
 
 ---
 
-## Phase 6 — MCP Layer
+## Phase 6 — MCP Layer ✅ DONE
 
-**Implements:** `apps/mcp` server `personal-os` exposing the full tool catalog (`docs/mcp-tools.md`) against the live Go API. Auth via `PERSONAL_OS_URL` + `PERSONAL_OS_TOKEN`. Published build `apps/mcp/dist/index.js`.
+**Implements:** `apps/mcp` server `personal-os` exposing the full tool catalog (33 tools, `docs/mcp-tools.md`) against the live Go API over stdio. Auth via `PERSONAL_OS_URL` + `PERSONAL_OS_TOKEN`. Published build `apps/mcp/dist/index.js`.
 
 **Docs:** wiring blocks for opencode and Claude Desktop/Code; troubleshooting section (is the API up? is the token set?).
 
-**Accepts:** from a real MCP client, asking natural language ("what's due today? how much did I spend on food this month? remember warranty X expires ...") produces correct API-backed answers — no hallucinated IDs.
+**Accepts:** from a real MCP client, asking natural language ("what's due today? how much did I spend on food this month? remember warranty X expires ...") produces correct API-backed answers — no hallucinated IDs. Verified by `scripts/mcp-smoke.mjs`: initialize → tools/list → planner_today / save_item→search_items / search_knowledge / check_habit all pass against a token-protected live API.
 
 ---
 

@@ -99,9 +99,10 @@ With these six tools an agent can already manage *any* personal data you will ev
 ## Tool design rules
 
 - Every tool that mutates has an `id` return and is retry-safe where a natural key exists.
-- Inputs use `camelCase` in MCP, mapped to `snake_case` on the wire; enums validated client-side before calling the API.
-- Errors are returned as `McpError` with `code` + human message (API's `details[]` forwarded).
+- Input field names are **snake_case, identical to the REST API** (`account_id`, `due_date`, …) so schemas map 1:1 with zero translation bugs (ADR-0019).
+- Errors are returned as `isError` results carrying the API's message + forwarded `details[]`; auth failures include a diagnostic hint.
 - No tool ever invents IDs — IDs come from the API.
+- JSON-array fields (`items`, `exercises`, `ingredients`) accept **real arrays** from the agent; the server stringifies for the wire.
 
 ## Example flows
 
