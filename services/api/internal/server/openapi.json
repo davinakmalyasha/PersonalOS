@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.5.0",
-    "description": "Local-first personal platform. Phase 5: Health module live (meals, recipes + grocery list, workouts, body metrics with day-upsert; summary + weight series). Finance, Planner, Knowledge and universal capture remain live."
+    "version": "0.6.0",
+    "description": "Local-first personal platform. Phase 8: live board (activity pulse) — all pillars + universal capture + MCP remain live."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
@@ -444,6 +444,28 @@
             "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Healthz" } } }
           },
           "503": { "description": "db unavailable" }
+        }
+      }
+    },
+    "/v1/activity": {
+      "get": {
+        "operationId": "activity",
+        "summary": "Per-pillar latest-change timestamps — poll this to detect agent writes cheaply",
+        "responses": {
+          "200": {
+            "description": "{pillars: {finance|planner|knowledge|universal|health: RFC3339}, latest: RFC3339}",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pillars": { "type": "object", "additionalProperties": { "type": "string" } },
+                    "latest": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
         }
       }
     },

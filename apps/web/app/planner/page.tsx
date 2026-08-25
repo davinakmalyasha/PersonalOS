@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { MonthCalendar } from "@/components/planner/month-calendar";
 import { TodayColumn } from "@/components/planner/today-column";
 import { TasksTable } from "@/components/planner/tasks-table";
@@ -90,15 +87,7 @@ export default function PlannerPage() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4" /> Home
-            </Link>
-            <span className="text-sm font-semibold tracking-tight">Planner</span>
-          </div>
+          <span className="text-sm font-semibold tracking-tight">Planner</span>
           <div className="flex items-center gap-2">
             <Button size="sm" variant="ghost" onClick={() => monthShift(-1)}>
               ←
@@ -112,7 +101,6 @@ export default function PlannerPage() {
             <Button size="sm" variant="ghost" onClick={() => monthShift(1)}>
               →
             </Button>
-            <ThemeToggle />
           </div>
         </div>
       </header>

@@ -27,6 +27,7 @@ type Server struct {
 	knowledge *store.Knowledge
 	items     *store.Items
 	health    *store.Health
+	activity  *store.ActivityStore
 }
 
 func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
@@ -37,6 +38,7 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 		s.knowledge = &store.Knowledge{DB: sqlDB}
 		s.items = &store.Items{DB: sqlDB}
 		s.health = &store.Health{DB: sqlDB}
+		s.activity = &store.ActivityStore{DB: sqlDB}
 	}
 
 	r := chi.NewRouter()
@@ -70,6 +72,9 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 		}
 		if s.health != nil {
 			s.mountHealth(r)
+		}
+		if s.activity != nil {
+			r.Get("/activity", s.handleActivity)
 		}
 	})
 

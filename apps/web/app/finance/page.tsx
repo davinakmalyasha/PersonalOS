@@ -1,9 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { CategoryChart } from "@/components/finance/category-chart";
 import { BudgetBars } from "@/components/finance/budget-bars";
 import { SummaryCards } from "@/components/finance/summary-cards";
@@ -45,15 +42,7 @@ export default function FinancePage() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <ArrowLeft className="h-4 w-4" /> Home
-            </Link>
-            <span className="text-sm font-semibold tracking-tight">Finance</span>
-          </div>
+          <span className="text-sm font-semibold tracking-tight">Finance</span>
           <div className="flex items-center gap-2">
             <input
               type="month"
@@ -61,7 +50,6 @@ export default function FinancePage() {
               onChange={(e) => setMonth(e.target.value || currentMonth())}
               className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs"
             />
-            <ThemeToggle />
           </div>
         </div>
       </header>

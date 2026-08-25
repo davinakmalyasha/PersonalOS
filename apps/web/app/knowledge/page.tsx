@@ -1,10 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { ThemeToggle } from "@/components/theme-toggle";
 import { SearchPanel } from "@/components/knowledge/search-panel";
 import { QuickAdd } from "@/components/knowledge/quick-add";
 import { ReadingBoard } from "@/components/knowledge/reading-board";
@@ -29,13 +26,7 @@ export default function KnowledgePage() {
     <div className="min-h-screen bg-background text-foreground">
       <header className="sticky top-0 z-10 border-b bg-background/80 backdrop-blur">
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
-          <div className="flex items-center gap-3">
-            <Link href="/" className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
-              <ArrowLeft className="h-4 w-4" /> Home
-            </Link>
-            <span className="text-sm font-semibold tracking-tight">Knowledge</span>
-          </div>
-          <ThemeToggle />
+          <span className="text-sm font-semibold tracking-tight">Knowledge</span>
         </div>
       </header>
 
