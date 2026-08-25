@@ -2,7 +2,7 @@
 
 Local-first personal platform — one SQLite backbone, a Go API, a Next.js dashboard, and MCP tooling so **any agent** can read/write your life data on your machine.
 
-> Status: Phase 4 (Knowledge) live — Finance, Planner, Knowledge pillars + universal capture core. See `docs/roadmap.md`.
+> Status: Phase 5 (Health) live — all four pillars + universal capture core. MCP layer next. See `docs/roadmap.md`.
 
 ## Pillars
 
@@ -11,7 +11,7 @@ Local-first personal platform — one SQLite backbone, a Go API, a Next.js dashb
 | **Finance** | accounts, transactions, categories/rules, budgets. CSV import + dedupe |
 | **Planner** | tasks + habits (streaks) + calendar events (RRULE-lite) — LIVE |
 | **Knowledge** | notes + bookmarks + reading — FTS5 search-first, tags, links — LIVE |
-| **Health** | meals + recipes + grocery, workouts + body metrics |
+| **Health** | meals/recipes/grocery + workouts/body metrics, weight trend — LIVE |
 | **Universal Capture** | `items` core for any random personal data; agent-native, promotable |
 
 Every pillar is **REST + MCP writable** — `Go owns the database`, TS never touches SQLite directly.

@@ -202,6 +202,59 @@ export type LinkPair = {
   created_at: string;
 };
 
+// ---- Health ----
+
+export type Meal = {
+  id: string;
+  eaten_at: string;
+  title: string;
+  notes: string;
+  items: { name?: string; qty?: string; unit?: string }[];
+  calories: number | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type Workout = {
+  id: string;
+  performed_at: string;
+  title: string | null;
+  notes: string;
+  duration_minutes: number | null;
+  exercises: { name?: string; sets?: number; reps?: number; weight_kg?: number }[];
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+};
+
+export type GroceryItem = {
+  id: string;
+  name: string;
+  qty: string;
+  unit: string | null;
+  checked: boolean;
+  recipe_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WeightPoint = { date: string; weight_kg: number };
+
+export type HealthSummary = {
+  from: string;
+  to: string;
+  workouts: { count: number; total_minutes: number };
+  meals: { count: number; calories_total: number | null };
+  weight: {
+    latest_kg: number | null;
+    first_kg: number | null;
+    change_kg: number | null;
+    measured_on: string | null;
+  };
+  grocery: { total: number; checked: number };
+};
+
 export function formatMinor(minor: number, currency = "IDR"): string {
   const major = minor / 100;
   try {

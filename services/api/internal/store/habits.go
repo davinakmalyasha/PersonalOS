@@ -12,18 +12,18 @@ import (
 // ---- Habits + checkoffs ----
 
 type Habit struct {
-	ID            string `json:"id"`
-	Name          string `json:"name"`
-	Description   string `json:"description"`
-	Cadence       string `json:"cadence"`
-	TargetPerWeek int    `json:"target_per_week"`
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	Description   string  `json:"description"`
+	Cadence       string  `json:"cadence"`
+	TargetPerWeek int     `json:"target_per_week"`
 	Color         *string `json:"color"`
 	CreatedAt     string  `json:"created_at"`
 	ArchivedAt    *string `json:"archived_at"`
 
 	// Computed (present when fetched via GetHabit/ListHabits with streaks).
-	Dates      []string      `json:"dates,omitempty"` // recent checkoff dates
-	Streaks    planner.Streaks `json:"streaks"`
+	Dates   []string        `json:"dates,omitempty"` // recent checkoff dates
+	Streaks planner.Streaks `json:"streaks"`
 }
 
 type HabitUpdate struct {

@@ -29,9 +29,9 @@ const pillars = [
   {
     title: "Health",
     desc: "Meals + recipes + grocery, workouts + body metrics. Trends that matter.",
-    status: "Phase 5",
+    status: "LIVE",
     href: "/health",
-    live: false,
+    live: true,
   },
 ] as const;
 

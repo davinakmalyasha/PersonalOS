@@ -68,7 +68,7 @@
 
 ---
 
-## Phase 5 — Health (Food + Fitness/Body)
+## Phase 5 — Health (Food + Fitness/Body) ✅ DONE
 
 **Schema:** `meals` (+ `items` JSON), `recipes` + `grocery_items`, `workouts` (+ `exercises` JSON), `body_metrics`.
 

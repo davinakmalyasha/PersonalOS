@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.4.0",
-    "description": "Local-first personal platform. Phase 4: Knowledge module live (notes, bookmarks with URL dedupe, reading list; universal items core + FTS5 unified search, tags, links, promote). Finance + Planner remain live."
+    "version": "0.5.0",
+    "description": "Local-first personal platform. Phase 5: Health module live (meals, recipes + grocery list, workouts, body metrics with day-upsert; summary + weight series). Finance, Planner, Knowledge and universal capture remain live."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
@@ -318,6 +318,117 @@
         "properties": {
           "tag": { "type": "string" },
           "count": { "type": "integer" }
+        }
+      },
+      "Meal": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "eaten_at": { "type": "string", "format": "date-time" },
+          "title": { "type": "string" },
+          "notes": { "type": "string" },
+          "items": { "type": "array", "items": { "type": "object" }, "description": "[{name, qty, unit}]" },
+          "calories": { "type": ["integer", "null"], "minimum": 0 },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "Recipe": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "ingredients": { "type": "array", "items": { "type": "object" } },
+          "instructions": { "type": "string" },
+          "servings": { "type": ["integer", "null"] },
+          "calories_per_serving": { "type": ["integer", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "GroceryItem": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "qty": { "type": "string" },
+          "unit": { "type": ["string", "null"] },
+          "checked": { "type": "boolean" },
+          "recipe_id": { "type": ["string", "null"] },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "Workout": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "performed_at": { "type": "string", "format": "date-time" },
+          "title": { "type": ["string", "null"] },
+          "notes": { "type": "string" },
+          "duration_minutes": { "type": ["integer", "null"], "minimum": 0 },
+          "exercises": { "type": "array", "items": { "type": "object" }, "description": "[{name, sets, reps, weight_kg}]" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "BodyMetric": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "measured_at": { "type": "string", "format": "date-time", "description": "one row per calendar day; same-day POST replaces" },
+          "weight_kg": { "type": ["number", "null"], "exclusiveMinimum": 0 },
+          "body_fat_pct": { "type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 100 },
+          "notes": { "type": "string" },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "WeightSeries": {
+        "type": "object",
+        "properties": {
+          "bucket": { "type": "string", "enum": ["day"] },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "date": { "type": "string", "format": "date" },
+                "weight_kg": { "type": "number" }
+              }
+            }
+          }
+        }
+      },
+      "HealthSummary": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "format": "date" },
+          "to": { "type": "string", "format": "date" },
+          "workouts": {
+            "type": "object",
+            "properties": { "count": { "type": "integer" }, "total_minutes": { "type": "integer" } }
+          },
+          "meals": {
+            "type": "object",
+            "properties": { "count": { "type": "integer" }, "calories_total": { "type": ["integer", "null"] } }
+          },
+          "weight": {
+            "type": "object",
+            "properties": {
+              "latest_kg": { "type": ["number", "null"] },
+              "first_kg": { "type": ["number", "null"] },
+              "change_kg": { "type": ["number", "null"] },
+              "measured_on": { "type": ["string", "null"] }
+            }
+          },
+          "grocery": {
+            "type": "object",
+            "properties": { "total": { "type": "integer" }, "checked": { "type": "integer" } }
+          }
         }
       }
     }
@@ -1031,6 +1142,240 @@
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100 } }
         ],
         "responses": { "200": { "description": "TagCount[]" } }
+      }
+    },
+    "/v1/meals": {
+      "get": {
+        "operationId": "listMeals",
+        "summary": "Meal journal, newest first",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged Meal list" } }
+      },
+      "post": {
+        "operationId": "createMeal",
+        "summary": "Log a meal",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eaten_at", "title"],
+                "properties": {
+                  "eaten_at": { "type": "string", "format": "date-time" },
+                  "title": { "type": "string" },
+                  "notes": { "type": "string" },
+                  "items": { "type": "array", "items": { "type": "object" }, "description": "[{name, qty, unit}]" },
+                  "calories": { "type": "integer", "minimum": 0 },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Meal" } } } }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/meals/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getMeal", "summary": "Get meal", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateMeal", "summary": "Update meal (null calories clears)", "responses": { "200": { "description": "ok" }, "400": { "description": "invalid fields" } } },
+      "delete": { "operationId": "deleteMeal", "summary": "Delete meal", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/recipes": {
+      "get": { "operationId": "listRecipes", "summary": "Recipes (?tag=&q=&page=&page_size=)", "responses": { "200": { "description": "paged Recipe list" } } },
+      "post": {
+        "operationId": "createRecipe",
+        "summary": "Create recipe",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "ingredients": { "type": "array", "items": { "type": "object" } },
+                  "instructions": { "type": "string" },
+                  "servings": { "type": "integer", "minimum": 1 },
+                  "calories_per_serving": { "type": "integer", "minimum": 0 },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/recipes/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getRecipe", "summary": "Get recipe", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateRecipe", "summary": "Update recipe", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteRecipe", "summary": "Delete recipe (grocery rows keep existing via SET NULL)", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/recipes/{id}/use": {
+      "post": {
+        "operationId": "useRecipeAsMeal",
+        "summary": "Copy recipe → meal: title derived, ingredients become items, calories = per-serving × servings",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["eaten_at"],
+                "properties": {
+                  "eaten_at": { "type": "string", "format": "date-time" },
+                  "servings": { "type": "integer", "minimum": 1, "description": "default: recipe servings or 1" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created Meal" }, "400": { "description": "bad eaten_at" }, "404": { "description": "missing recipe" } }
+      }
+    },
+    "/v1/grocery": {
+      "get": {
+        "operationId": "listGrocery",
+        "summary": "Grocery list, unchecked first",
+        "parameters": [{ "name": "checked", "in": "query", "schema": { "type": "boolean" } }],
+        "responses": { "200": { "description": "GroceryItem[]" } }
+      },
+      "post": {
+        "operationId": "createGroceryItem",
+        "summary": "Add grocery item ({name, qty?, unit?, recipe_id?})",
+        "responses": { "201": { "description": "created" }, "400": { "description": "name required" }, "404": { "description": "recipe_id missing" } }
+      }
+    },
+    "/v1/grocery/clear-checked": {
+      "post": {
+        "operationId": "clearCheckedGrocery",
+        "summary": "Bulk-remove ONLY checked=true items → {removed: n}",
+        "responses": { "200": { "description": "{removed}" } }
+      }
+    },
+    "/v1/grocery/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": {
+        "operationId": "updateGroceryItem",
+        "summary": "Update / toggle checked",
+        "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } }
+      },
+      "delete": { "operationId": "deleteGroceryItem", "summary": "Remove item", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/workouts": {
+      "get": {
+        "operationId": "listWorkouts",
+        "summary": "Workout log, newest first",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged Workout list" } }
+      },
+      "post": {
+        "operationId": "createWorkout",
+        "summary": "Log a workout",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["performed_at"],
+                "properties": {
+                  "performed_at": { "type": "string", "format": "date-time" },
+                  "title": { "type": ["string", "null"] },
+                  "notes": { "type": "string" },
+                  "duration_minutes": { "type": "integer", "minimum": 0 },
+                  "exercises": { "type": "array", "items": { "type": "object" }, "description": "[{name, sets, reps, weight_kg}]" },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/workouts/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getWorkout", "summary": "Get workout", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateWorkout", "summary": "Update workout", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteWorkout", "summary": "Delete workout", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/body-metrics": {
+      "get": {
+        "operationId": "listBodyMetrics",
+        "summary": "Daily body metrics, newest first",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "BodyMetric[]" } }
+      },
+      "post": {
+        "operationId": "upsertBodyMetric",
+        "summary": "Upsert by calendar day — same-day POST replaces the row; returns stored metric",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["measured_at"],
+                "properties": {
+                  "measured_at": { "type": "string", "format": "date-time" },
+                  "weight_kg": { "type": "number", "exclusiveMinimum": 0 },
+                  "body_fat_pct": { "type": "number", "exclusiveMinimum": 0, "exclusiveMaximum": 100 },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "stored BodyMetric" }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/body-metrics/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getBodyMetric", "summary": "Get metric", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "delete": { "operationId": "deleteBodyMetric", "summary": "Delete metric", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/health/summary": {
+      "get": {
+        "operationId": "healthSummary",
+        "summary": "Window rollup: workouts count/minutes, meals count/calories, weight first→latest change, grocery counts",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "HealthSummary", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthSummary" } } } } }
+      }
+    },
+    "/v1/health/weight-series": {
+      "get": {
+        "operationId": "weightSeries",
+        "summary": "Daily-bucketed weight series ascending for charts",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "bucket", "in": "query", "schema": { "type": "string", "enum": ["day"], "default": "day" } }
+        ],
+        "responses": { "200": { "description": "WeightSeries", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/WeightSeries" } } } } }
       }
     }
   }

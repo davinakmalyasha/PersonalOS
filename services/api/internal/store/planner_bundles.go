@@ -15,16 +15,16 @@ type HabitWithStatus struct {
 }
 
 type DayBundle struct {
-	Date    string             `json:"date"` // YYYY-MM-DD
-	Tasks   []Task             `json:"tasks"`
-	Habits  []HabitWithStatus  `json:"habits"`
-	Events  []Occurrence       `json:"events"`
+	Date   string            `json:"date"` // YYYY-MM-DD
+	Tasks  []Task            `json:"tasks"`
+	Habits []HabitWithStatus `json:"habits"`
+	Events []Occurrence      `json:"events"`
 }
 
 type TodayBundle struct {
-	Date     string `json:"date"`
-	Overdue  []Task `json:"overdue"`
-	DueToday []Task `json:"due_today"`
+	Date     string            `json:"date"`
+	Overdue  []Task            `json:"overdue"`
+	DueToday []Task            `json:"due_today"`
 	Habits   []HabitWithStatus `json:"habits"`
 	Events   []Occurrence      `json:"events"`
 }

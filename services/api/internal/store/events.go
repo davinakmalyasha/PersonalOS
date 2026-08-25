@@ -27,15 +27,15 @@ type Event struct {
 
 // Occurrence is one materialized instance of an event inside a window.
 type Occurrence struct {
-	EventID    string   `json:"event_id"`
-	Title      string   `json:"title"`
-	Description string  `json:"description"`
-	Location   string   `json:"location"`
-	Tags       []string `json:"tags"`
-	Date       string   `json:"date"`       // YYYY-MM-DD of occurrence
-	StartsAt   string   `json:"starts_at"`  // RFC3339 on occurrence day
-	EndsAt     *string  `json:"ends_at,omitempty"`
-	Series     bool     `json:"series"` // true when part of a recurrence
+	EventID     string   `json:"event_id"`
+	Title       string   `json:"title"`
+	Description string   `json:"description"`
+	Location    string   `json:"location"`
+	Tags        []string `json:"tags"`
+	Date        string   `json:"date"`      // YYYY-MM-DD of occurrence
+	StartsAt    string   `json:"starts_at"` // RFC3339 on occurrence day
+	EndsAt      *string  `json:"ends_at,omitempty"`
+	Series      bool     `json:"series"` // true when part of a recurrence
 }
 
 func validEventTime(s string) bool {
