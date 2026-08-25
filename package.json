@@ -1,23 +1,15 @@
 {
   "name": "personal-os",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Personal OS — local-first life platform for humans and agents",
-  "workspaces": [
-    "apps/*",
-    "packages/*"
-  ],
   "scripts": {
-    "dev:web": "npm --workspace apps/web run dev",
-    "build:web": "npm --workspace apps/web run build",
-    "lint": "npm --workspaces run lint --if-present",
-    "typecheck": "npm --workspaces run typecheck --if-present",
-    "test": "echo \"use go test ./... for API tests\""
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:web": "npm --prefix apps/web run build",
+    "lint:web": "npm --prefix apps/web run lint",
+    "typecheck:web": "npx --prefix apps/web tsc --noEmit"
   },
   "engines": {
     "node": ">=18"
-  },
-  "devDependencies": {
-    "next": "^16.3.2"
   }
 }

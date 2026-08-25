@@ -20,11 +20,11 @@ func main() {
 	cfg := config.Load()
 	logger := logging.New(cfg.LogLevel)
 
-	if err := os.MkdirAll(filepath.Dir(cfg.DBPath), 0o755); err != nil {
-		logger.Fatal().Err(err).Str("db_path", cfg.DBPath).Msg("create data dir")
+	if err := os.MkdirAll(filepath.Dir(resolveDBPath(cfg.DBPath)), 0o755); err != nil {
+		logger.Fatal().Err(err).Msg("create data dir")
 	}
 
-	sqlDB, err := db.Open(cfg.DBPath)
+	sqlDB, err := db.Open(resolveDBPath(cfg.DBPath))
 	if err != nil {
 		logger.Fatal().Err(err).Msg("open db")
 	}
@@ -51,7 +51,7 @@ func main() {
 	}
 
 	go func() {
-		logger.Info().Str("addr", addr).Str("db", cfg.DBPath).Msg("api listening")
+		logger.Info().Str("addr", addr).Str("db", resolveDBPath(cfg.DBPath)).Msg("api listening")
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatal().Err(err).Msg("listen")
 		}

@@ -50,7 +50,7 @@ services/api/
 └─ go.mod                 # module github.com/davinakmalyasha/PersonalOS (repo root)
 ```
 
-At the repo root we keep a single `go.mod` (`module github.com/davinakmalyasha/PersonalOS`) so `go test ./...` covers all services from the root. `services/scheduler` is a placeholder until a stretch need arises.
+At `services/api/go.mod` the module is `github.com/davinakmalyasha/PersonalOS/services/api` (per-service modules — see ADR-0014). Run Go commands from that directory; `go test ./...` covers the service. JS apps install their own deps (no workspaces) so Node's tree never pollutes Go's.
 
 ## Module plugin pattern
 

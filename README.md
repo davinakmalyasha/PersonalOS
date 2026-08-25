@@ -23,19 +23,19 @@ Every pillar is **REST + MCP writable** — `Go owns the database`, TS never tou
 cp .env.example .env   # edit if needed
 
 # 2. API (Go 1.22+, gcc required for mattn/go-sqlite3)
-go run ./services/api/cmd/api
+cd services/api
+go run ./cmd/api
 # → http://localhost:8080/healthz
 # → http://localhost:8080/openapi.json
 
 # 3. Dashboard (Node 18+)
-npm install
-npm run dev:web
+npm install        # in apps/web (self-contained, not a workspace)
+npm run dev
 # → http://localhost:3000
 
 # 4. Tests / lint
-go test ./...
-go vet ./...
-npm run lint
+cd services/api && go test ./... && go vet ./...
+cd apps/web && npm run lint && npx tsc --noEmit
 ```
 
 ## Monorepo layout

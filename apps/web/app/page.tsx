@@ -2,31 +2,36 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
+import Link from "next/link";
 
 const pillars = [
   {
     title: "Finance",
     desc: "Accounts, transactions, budgets, CSV import + dedupe, rules. Spending by month/category vs budget.",
-    status: "Phase 2",
+    status: "LIVE",
     href: "/finance",
+    live: true,
   },
   {
     title: "Planner",
     desc: "Tasks + habits + calendar events. Today / upcoming / streaks / recurrence.",
     status: "Phase 3",
     href: "/planner",
+    live: false,
   },
   {
     title: "Knowledge",
     desc: "Notes + bookmarks + reading list. FTS5, tags, links, global search.",
     status: "Phase 4",
     href: "/knowledge",
+    live: false,
   },
   {
     title: "Health",
     desc: "Meals + recipes + grocery, workouts + body metrics. Trends that matter.",
     status: "Phase 5",
     href: "/health",
+    live: false,
   },
 ] as const;
 
@@ -89,14 +94,22 @@ export default function Home() {
               <CardHeader>
                 <div className="flex items-center justify-between gap-2">
                   <CardTitle className="text-base">{p.title}</CardTitle>
-                  <Badge variant="secondary" className="text-[10px]">{p.status}</Badge>
+                  <Badge variant={p.live ? "default" : "secondary"} className="text-[10px]">
+                    {p.status}
+                  </Badge>
                 </div>
                 <CardDescription className="leading-6">{p.desc}</CardDescription>
               </CardHeader>
               <CardContent className="mt-auto pt-0">
-                <Button variant="outline" size="sm" className="w-full" disabled>
-                  Opens {p.href} →
-                </Button>
+                {p.live ? (
+                  <Link href={p.href} className={buttonVariants({ variant: "outline", size: "sm" }) + " w-full"}>
+                    Open {p.href} →
+                  </Link>
+                ) : (
+                  <Button variant="outline" size="sm" className="w-full" disabled>
+                    Opens {p.href} →
+                  </Button>
+                )}
               </CardContent>
             </Card>
           ))}

@@ -2,12 +2,154 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.1.0",
-    "description": "Local-first personal platform — Go owns the DB. See docs/api-outline.md for the full endpoint plan. This spec grows per phase; Phase 1 exposes health + spec."
+    "version": "0.2.0",
+    "description": "Local-first personal platform. Phase 2: Finance module live (accounts, transactions, CSV import with dedupe, categories, rules, budgets, summaries)."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
   ],
+  "security": [{ "bearerAuth": [] }],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer" }
+    },
+    "schemas": {
+      "Healthz": {
+        "type": "object",
+        "required": ["status", "db"],
+        "properties": {
+          "status": { "type": "string", "example": "ok" },
+          "db": { "type": "string", "example": "ok" }
+        }
+      },
+      "Account": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["checking", "savings", "cash", "card", "wallet"] },
+          "currency": { "type": "string" },
+          "created_at": { "type": "string" },
+          "balance_minor": { "type": "integer", "description": "sum of signed transaction amounts" }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "account_id": { "type": "string" },
+          "amount_minor": { "type": "integer", "description": "signed; spend negative, income positive" },
+          "currency": { "type": "string" },
+          "date": { "type": "string", "format": "date" },
+          "merchant": { "type": "string" },
+          "raw_description": { "type": "string" },
+          "category_id": { "type": ["string", "null"] },
+          "category_name": { "type": ["string", "null"] },
+          "notes": { "type": "string" },
+          "created_at": { "type": "string" }
+        }
+      },
+      "CategoryNode": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "parent_id": { "type": ["string", "null"] },
+          "color": { "type": ["string", "null"] },
+          "created_at": { "type": "string" },
+          "children": { "type": "array", "items": { "$ref": "#/components/schemas/CategoryNode" } }
+        }
+      },
+      "Rule": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "pattern": { "type": "string" },
+          "category_id": { "type": "string" },
+          "priority": { "type": "integer" },
+          "created_at": { "type": "string" }
+        }
+      },
+      "Budget": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "category_id": { "type": "string" },
+          "category": { "type": "string" },
+          "month": { "type": "string", "example": "2026-08" },
+          "amount_minor": { "type": "integer" }
+        }
+      },
+      "ImportResult": {
+        "type": "object",
+        "properties": {
+          "imported": { "type": "integer" },
+          "skipped": { "type": "integer", "description": "duplicates by (date, amount, description-hash)" },
+          "skipped_invalid": { "type": "integer" },
+          "auto_categorized": { "type": "integer" },
+          "errors": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "line": { "type": "integer" },
+                "message": { "type": "string" }
+              }
+            }
+          }
+        }
+      },
+      "MonthSummary": {
+        "type": "object",
+        "properties": {
+          "month": { "type": "string" },
+          "income_minor": { "type": "integer" },
+          "outcome_minor": { "type": "integer" },
+          "net_minor": { "type": "integer" },
+          "by_category": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category_id": { "type": "string" },
+                "name": { "type": "string" },
+                "spent_minor": { "type": "integer" }
+              }
+            }
+          },
+          "budgets": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "category_id": { "type": "string" },
+                "category_name": { "type": "string" },
+                "budget_minor": { "type": "integer" },
+                "spent_minor": { "type": "integer" },
+                "over": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      },
+      "SpendingSeries": {
+        "type": "object",
+        "properties": {
+          "group_by": { "type": "string", "enum": ["month", "category"] },
+          "points": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "label": { "type": "string" },
+                "spent_minor": { "type": "integer" }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "paths": {
     "/healthz": {
       "get": {
@@ -16,18 +158,7 @@
         "responses": {
           "200": {
             "description": "ok",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["status", "db"],
-                  "properties": {
-                    "status": { "type": "string", "example": "ok" },
-                    "db": { "type": "string", "example": "ok" }
-                  }
-                }
-              }
-            }
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Healthz" } } }
           },
           "503": { "description": "db unavailable" }
         }
@@ -37,16 +168,238 @@
       "get": {
         "operationId": "getOpenAPI",
         "summary": "Canonical OpenAPI spec",
-        "responses": {
-          "200": {
-            "description": "spec",
-            "content": {
-              "application/json": {
-                "schema": { "type": "object" }
+        "responses": { "200": { "description": "spec" } }
+      }
+    },
+    "/v1/accounts": {
+      "post": {
+        "operationId": "createAccount",
+        "summary": "Create account",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "type": { "type": "string", "enum": ["checking", "savings", "cash", "card", "wallet"] },
+                  "currency": { "type": "string", "default": "IDR" }
+                }
               }
             }
           }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Account" } } } }, "409": { "description": "duplicate name" } }
+      },
+      "get": {
+        "operationId": "listAccounts",
+        "summary": "List accounts with balances",
+        "responses": { "200": { "description": "list", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Account" } } } } } } } }
+      }
+    },
+    "/v1/accounts/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getAccount", "summary": "Get account", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateAccount", "summary": "Update name/type", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteAccount", "summary": "Delete (blocks when transactions exist)", "responses": { "204": { "description": "deleted" }, "409": { "description": "has transactions" } } }
+    },
+    "/v1/transactions": {
+      "get": {
+        "operationId": "listTransactions",
+        "summary": "List transactions (filter/search/paginate)",
+        "parameters": [
+          { "name": "account_id", "in": "query", "schema": { "type": "string" } },
+          { "name": "category_id", "in": "query", "schema": { "type": "string" }, "description": "'none' = uncategorized only" },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "min", "in": "query", "schema": { "type": "integer" } },
+          { "name": "max", "in": "query", "schema": { "type": "integer" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged list", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Transaction" } }, "total": { "type": "integer" }, "page": { "type": "integer" }, "page_size": { "type": "integer" } } } } } } }
+      },
+      "post": {
+        "operationId": "createTransaction",
+        "summary": "Create a transaction",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["account_id", "amount_minor", "date"],
+                "properties": {
+                  "account_id": { "type": "string" },
+                  "amount_minor": { "type": "integer" },
+                  "date": { "type": "string", "format": "date" },
+                  "merchant": { "type": "string" },
+                  "raw_description": { "type": "string" },
+                  "category_id": { "type": ["string", "null"] },
+                  "notes": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" }, "409": { "description": "duplicate natural key" } }
+      }
+    },
+    "/v1/transactions/import": {
+      "post": {
+        "operationId": "importTransactionsCsv",
+        "summary": "Import bank CSV: auto-detect columns (EN/ID), dedupe by (date, amount, hash), auto-categorize via rules",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "required": ["file", "account_id"],
+                "properties": {
+                  "file": { "type": "string", "format": "binary" },
+                  "account_id": { "type": "string" },
+                  "currency": { "type": "string", "default": "IDR" },
+                  "date_format": { "type": "string", "description": "Go layout override, e.g. 02/01/2006" },
+                  "date_col": { "type": "integer" },
+                  "desc_col": { "type": "integer" },
+                  "amount_col": { "type": "integer" },
+                  "debit_col": { "type": "integer" },
+                  "credit_col": { "type": "integer" },
+                  "merchant_col": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "report", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ImportResult" } } } }
         }
+      }
+    },
+    "/v1/transactions/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getTransaction", "summary": "Get transaction", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": {
+        "operationId": "updateTransaction",
+        "summary": "Update (category override persists; raw_description change recomputes dedupe hash)",
+        "responses": { "200": { "description": "ok" }, "409": { "description": "natural key collision" } }
+      },
+      "delete": { "operationId": "deleteTransaction", "summary": "Delete transaction", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/categories": {
+      "get": { "operationId": "listCategories", "summary": "Category tree", "responses": { "200": { "description": "tree", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/CategoryNode" } } } } } } } } },
+      "post": {
+        "operationId": "createCategory",
+        "summary": "Create category",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "parent_id": { "type": ["string", "null"] },
+                  "color": { "type": ["string", "null"] }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" }, "409": { "description": "duplicate name under parent" } }
+      }
+    },
+    "/v1/categories/{id}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "reassign_to", "in": "query", "schema": { "type": "string" }, "description": "delete: move transactions to this category instead of blocking" }
+      ],
+      "patch": { "operationId": "updateCategory", "summary": "Update / reparent", "responses": { "200": { "description": "ok" }, "400": { "description": "cycle rejected" } } },
+      "delete": { "operationId": "deleteCategory", "summary": "Delete (blocks on children/usage unless reassign_to)", "responses": { "204": { "description": "deleted" }, "409": { "description": "referenced" } } }
+    },
+    "/v1/rules": {
+      "get": { "operationId": "listRules", "summary": "Rules ordered by priority", "responses": { "200": { "description": "list" } } },
+      "post": {
+        "operationId": "createRule",
+        "summary": "Create categorization rule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["pattern", "category_id"],
+                "properties": {
+                  "pattern": { "type": "string" },
+                  "category_id": { "type": "string" },
+                  "priority": { "type": "integer", "default": 100 }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" } }
+      }
+    },
+    "/v1/rules/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": { "operationId": "updateRule", "summary": "Update rule / reorder", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteRule", "summary": "Delete rule", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/budgets": {
+      "get": { "operationId": "listBudgets", "summary": "List budgets", "parameters": [
+        { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-01" } },
+        { "name": "to", "in": "query", "schema": { "type": "string" } }
+      ], "responses": { "200": { "description": "list" } } },
+      "post": {
+        "operationId": "upsertBudget",
+        "summary": "Upsert budget for (category, month)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["category_id", "month", "amount_minor"],
+                "properties": {
+                  "category_id": { "type": "string" },
+                  "month": { "type": "string", "example": "2026-08" },
+                  "amount_minor": { "type": "integer" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "upserted" } }
+      }
+    },
+    "/v1/budgets/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "delete": { "operationId": "deleteBudget", "summary": "Delete budget", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/finance/summary": {
+      "get": {
+        "operationId": "financeSummary",
+        "summary": "Month totals, category rollup, budget-vs-spent",
+        "parameters": [{ "name": "month", "in": "query", "required": true, "schema": { "type": "string", "example": "2026-08" } }],
+        "responses": { "200": { "description": "summary", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MonthSummary" } } } } }
+      }
+    },
+    "/v1/finance/spending": {
+      "get": {
+        "operationId": "financeSpending",
+        "summary": "Spending time series or breakdown",
+        "parameters": [
+          { "name": "group_by", "in": "query", "schema": { "type": "string", "enum": ["month", "category"], "default": "month" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "series", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SpendingSeries" } } } } }
       }
     }
   }

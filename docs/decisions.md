@@ -86,6 +86,20 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** lexicographically sortable, no AUTOINCREMENT portability quirks, works as `TEXT PK` in SQLite and `text` in Postgres without sequence gymnastics.
 - **Consequence:** app must generate IDs; tests use deterministic entropy.
 
+## ADR-0013 — Finance store: hand-written typed queries, sqlc deferred
+
+- **Date:** 2026-08-25
+- **Decision:** Phase 2 ships a hand-written `internal/store` package (parameterized SQL, struct scans, sentinel errors `ErrNotFound/ErrConflict/ErrInvalid`) instead of generating code with sqlc. Revisit sqlc when the query surface stabilizes after Planner/Knowledge land.
+- **Why:** the finance query surface is small and stable enough to hand-write safely with full test coverage; adding a codegen toolchain step mid-phase risked momentum without changing observable behavior. All SQL remains Postgres-portable.
+- **Consequence:** `sqlc.yaml` is not present yet; ADR-0002's module layout unaffected. When adopted, generated queries replace store methods one pillar at a time behind the same handler contracts.
+
+## ADR-0014 — Per-service Go modules (supersedes ADR-0002)
+
+- **Date:** 2026-08-25
+- **Decision:** move `go.mod` into `services/api` (`module github.com/davinakmalyasha/PersonalOS/services/api`). Future Go services (e.g., scheduler) get their own module. JS apps are self-contained installs (no npm workspaces); root `package.json` keeps only convenience scripts.
+- **Why:** with a single root module, the Go toolchain traversed `apps/web/node_modules` (a dependency ships a stray Go package, `flatted/golang/...`), polluting `go build ./...`. Per-service modules give each language a clean tree; import paths of all existing packages are unchanged relative to their module.
+- **Consequence:** run Go commands from `services/api` (README updated); CI sets `working-directory: services/api`. ADR-0002 is superseded, not deleted.
+
 ---
 
 Template for the next ADR:

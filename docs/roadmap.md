@@ -4,7 +4,7 @@
 
 ---
 
-## Phase 0 — Documentation & Design ✅ (this docs suite)
+## Phase 0 — Documentation & Design ✅ DONE
 
 **Ships:** `docs/vision.md`, `spec.md`, `data-model.md`, `architecture.md`, `api-outline.md`, `mcp-tools.md`, `design-system.md`, `roadmap.md` (this file), `decisions.md` plus `.env.example` and README `Quick start`.
 
@@ -12,7 +12,7 @@
 
 ---
 
-## Phase 1 — Foundation
+## Phase 1 — Foundation ✅ DONE
 
 **Scaffold:** exact monorepo layout (`services/api`, `services/scheduler` stub, `apps/web`, `apps/mcp` stub, `packages/sdk` stub, `deploy/`), root `go.mod` (`github.com/davinakmalyasha/PersonalOS`), root `package.json` workspaces, `.gitignore`, `data/` gitignored.
 
@@ -26,7 +26,7 @@
 
 ---
 
-## Phase 2 — Finance ⭐ (highest value, hardest logic)
+## Phase 2 — Finance ⭐ ✅ DONE
 
 **Schema:** `accounts`, `transactions` (amount minor units, date, merchant, raw_description, hash), `categories` (hierarchical), `categorization_rules` (pattern→category, priority), `budgets` (category+month).
 
