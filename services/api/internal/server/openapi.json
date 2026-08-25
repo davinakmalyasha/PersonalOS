@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.2.0",
-    "description": "Local-first personal platform. Phase 2: Finance module live (accounts, transactions, CSV import with dedupe, categories, rules, budgets, summaries)."
+    "version": "0.3.0",
+    "description": "Local-first personal platform. Phase 3: Planner module live (tasks, habits + checkoffs with streaks, events with RRULE-lite recurrence, today/upcoming/overview bundles) alongside Phase 2 Finance."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
@@ -146,6 +146,101 @@
               }
             }
           }
+        }
+      },
+      "Task": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "notes": { "type": "string" },
+          "status": { "type": "string", "enum": ["todo", "doing", "done"] },
+          "priority": { "type": "string", "enum": ["low", "med", "high"] },
+          "due_date": { "type": ["string", "null"], "format": "date" },
+          "project": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" },
+          "completed_at": { "type": ["string", "null"] }
+        }
+      },
+      "HabitStreaks": {
+        "type": "object",
+        "properties": {
+          "current": { "type": "integer", "description": "consecutive days (daily) or target-meeting weeks (weekly)" },
+          "longest": { "type": "integer" },
+          "done_today": { "type": "boolean" },
+          "week_done": { "type": "integer" },
+          "target_per_week": { "type": "integer" }
+        }
+      },
+      "Habit": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "cadence": { "type": "string", "enum": ["daily", "weekly"] },
+          "target_per_week": { "type": "integer", "minimum": 1, "maximum": 7 },
+          "color": { "type": ["string", "null"] },
+          "created_at": { "type": "string" },
+          "archived_at": { "type": ["string", "null"] },
+          "streaks": { "$ref": "#/components/schemas/HabitStreaks" }
+        }
+      },
+      "Event": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": ["string", "null"], "format": "date-time" },
+          "location": { "type": "string" },
+          "recurrence_rule": {
+            "type": ["string", "null"],
+            "description": "RRULE-lite: FREQ=DAILY|WEEKLY|MONTHLY;INTERVAL=n;COUNT=n|UNTIL=YYYYMMDD"
+          },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Occurrence": {
+        "type": "object",
+        "properties": {
+          "event_id": { "type": "string" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "location": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "date": { "type": "string", "format": "date" },
+          "starts_at": { "type": "string", "format": "date-time" },
+          "ends_at": { "type": "string", "format": "date-time" },
+          "series": { "type": "boolean" }
+        }
+      },
+      "TodayBundle": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string", "format": "date" },
+          "overdue": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
+          "due_today": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } },
+          "habits": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "allOf": [
+                { "$ref": "#/components/schemas/Habit" },
+                {
+                  "type": "object",
+                  "properties": {
+                    "due_today": { "type": "boolean" },
+                    "done_today": { "type": "boolean" }
+                  }
+                }
+              ]
+            }
+          },
+          "events": { "type": "array", "items": { "$ref": "#/components/schemas/Occurrence" } }
         }
       }
     }
@@ -400,6 +495,197 @@
           { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
         ],
         "responses": { "200": { "description": "series", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SpendingSeries" } } } } }
+      }
+    },
+    "/v1/tasks": {
+      "get": {
+        "operationId": "listTasks",
+        "summary": "List tasks (filter/search/paginate)",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["open", "todo", "doing", "done"] }, "description": "'open' = todo+doing" },
+          { "name": "priority", "in": "query", "schema": { "type": "string", "enum": ["low", "med", "high"] } },
+          { "name": "due", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "due_before", "in": "query", "schema": { "type": "string", "format": "date" }, "description": "due on/before date (overdue scans)" },
+          { "name": "project", "in": "query", "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "default": 100, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged list", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Task" } }, "total": { "type": "integer" }, "page": { "type": "integer" }, "page_size": { "type": "integer" } } } } } } }
+      },
+      "post": {
+        "operationId": "createTask",
+        "summary": "Create task (quick capture)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "notes": { "type": "string" },
+                  "status": { "type": "string", "enum": ["todo", "doing", "done"], "default": "todo" },
+                  "priority": { "type": "string", "enum": ["low", "med", "high"], "default": "med" },
+                  "due_date": { "type": "string", "format": "date" },
+                  "project": { "type": "string" },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Task" } } } }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/tasks/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getTask", "summary": "Get task", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": {
+        "operationId": "updateTask",
+        "summary": "Update task; status=done stamps completed_at, reopening clears it. Empty due_date/project clears the field.",
+        "responses": { "200": { "description": "ok" }, "400": { "description": "invalid status/priority/date" }, "404": { "description": "missing" } }
+      },
+      "delete": { "operationId": "deleteTask", "summary": "Delete task", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/habits": {
+      "get": {
+        "operationId": "listHabits",
+        "summary": "List habits with computed streaks",
+        "parameters": [{ "name": "archived", "in": "query", "schema": { "type": "string", "enum": ["all"] }, "description": "'all' includes archived" }],
+        "responses": { "200": { "description": "list", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Habit" } } } } } } } }
+      },
+      "post": {
+        "operationId": "createHabit",
+        "summary": "Create habit",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "description": { "type": "string" },
+                  "cadence": { "type": "string", "enum": ["daily", "weekly"], "default": "daily" },
+                  "target_per_week": { "type": "integer", "minimum": 1, "maximum": 7 },
+                  "color": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Habit" } } } }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/habits/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": {
+        "operationId": "getHabit",
+        "summary": "Get habit with streaks + full checkoff dates",
+        "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Habit" } } } }, "404": { "description": "missing" } }
+      },
+      "patch": {
+        "operationId": "updateHabit",
+        "summary": "Update habit / archive via {archived: bool}",
+        "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } }
+      },
+      "delete": { "operationId": "deleteHabit", "summary": "Delete habit (cascades checkoffs)", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/habits/{id}/checkoffs": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "toggleCheckoff",
+        "summary": "Toggle checkoff for a date (insert when missing, remove when present). Returns new state + streaks.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": { "date": { "type": "string", "format": "date", "description": "default: today UTC" } }
+              }
+            }
+          }
+        },
+        "responses": { "200": { "description": "{habit_id, date, done, streaks}" }, "404": { "description": "missing habit" } }
+      },
+      "get": {
+        "operationId": "listCheckoffs",
+        "summary": "Checkoff dates in window",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "dates descending", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "type": "string", "format": "date" } } } } } } } }
+      }
+    },
+    "/v1/events": {
+      "get": {
+        "operationId": "listEvents",
+        "summary": "Occurrences between from/to — recurring events expanded at read time (RRULE-lite)",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "occurrences", "content": { "application/json": { "schema": { "type": "object", "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Occurrence" } } } } } } } }
+      },
+      "post": {
+        "operationId": "createEvent",
+        "summary": "Create event (single or recurring)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title", "starts_at"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "description": { "type": "string" },
+                  "starts_at": { "type": "string", "format": "date-time" },
+                  "ends_at": { "type": "string", "format": "date-time" },
+                  "location": { "type": "string" },
+                  "recurrence_rule": { "type": "string", "example": "FREQ=WEEKLY" },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "400": { "description": "bad starts_at or recurrence_rule (unknown tokens rejected)" } }
+      }
+    },
+    "/v1/events/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getEvent", "summary": "Get event series definition", "responses": { "200": { "description": "ok", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Event" } } } }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateEvent", "summary": "Update event (edits whole series)", "responses": { "200": { "description": "ok" }, "400": { "description": "invalid fields" } } },
+      "delete": { "operationId": "deleteEvent", "summary": "Delete event series", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/planner/today": {
+      "get": {
+        "operationId": "plannerToday",
+        "summary": "Tasks due today + overdue + habits (due/done state) + today's event occurrences",
+        "responses": { "200": { "description": "bundle", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TodayBundle" } } } } }
+      }
+    },
+    "/v1/planner/upcoming": {
+      "get": {
+        "operationId": "plannerUpcoming",
+        "summary": "Per-day agenda for the next N days",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 7, "maximum": 60 } }],
+        "responses": { "200": { "description": "days with tasks + events" } }
+      }
+    },
+    "/v1/planner/overview": {
+      "get": {
+        "operationId": "plannerOverview",
+        "summary": "Unified daily bundle: tasks on date + habits state + occurrences",
+        "parameters": [{ "name": "date", "in": "query", "schema": { "type": "string", "format": "date", "description": "default: today UTC" } }],
+        "responses": { "200": { "description": "day bundle" }, "400": { "description": "bad date" } }
       }
     }
   }

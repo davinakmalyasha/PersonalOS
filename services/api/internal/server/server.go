@@ -23,12 +23,14 @@ type Server struct {
 	db      *sql.DB
 	logger  zerolog.Logger
 	finance *store.Finance
+	planner *store.Planner
 }
 
 func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 	s := &Server{db: sqlDB, logger: logger}
 	if sqlDB != nil {
 		s.finance = &store.Finance{DB: sqlDB}
+		s.planner = &store.Planner{DB: sqlDB}
 	}
 
 	r := chi.NewRouter()
@@ -50,6 +52,9 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 
 		if s.finance != nil {
 			s.mountFinance(r)
+		}
+		if s.planner != nil {
+			s.mountPlanner(r)
 		}
 	})
 

@@ -40,7 +40,7 @@
 
 ---
 
-## Phase 3 — Planner (Tasks + Habits + Events)
+## Phase 3 — Planner (Tasks + Habits + Events) ✅ DONE
 
 **Schema:** `tasks`, `habits` + `habit_checkoffs`, `events` (RRULE-lite).
 

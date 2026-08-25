@@ -2,14 +2,14 @@
 
 Local-first personal platform — one SQLite backbone, a Go API, a Next.js dashboard, and MCP tooling so **any agent** can read/write your life data on your machine.
 
-> Status: Phase 0–1 (Foundation + Documentation). See `docs/roadmap.md` for the full plan.
+> Status: Phase 3 (Planner) live — Finance + Planner pillars, docs complete. See `docs/roadmap.md`.
 
 ## Pillars
 
 | Pillar | What lives there |
 |---|---|
 | **Finance** | accounts, transactions, categories/rules, budgets. CSV import + dedupe |
-| **Planner** | tasks + habits + calendar events (recurrence) |
+| **Planner** | tasks + habits (streaks, checkoffs) + calendar events (RRULE-lite) — LIVE |
 | **Knowledge** | notes + bookmarks + reading list — FTS5, tags, links |
 | **Health** | food (meals/recipes/grocery) + fitness (workouts/body metrics) |
 | **Universal Capture** | `items` core for any random personal data; agent-native, promotable |

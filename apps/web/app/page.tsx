@@ -15,9 +15,9 @@ const pillars = [
   {
     title: "Planner",
     desc: "Tasks + habits + calendar events. Today / upcoming / streaks / recurrence.",
-    status: "Phase 3",
+    status: "LIVE",
     href: "/planner",
-    live: false,
+    live: true,
   },
   {
     title: "Knowledge",

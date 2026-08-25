@@ -100,6 +100,20 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** with a single root module, the Go toolchain traversed `apps/web/node_modules` (a dependency ships a stray Go package, `flatted/golang/...`), polluting `go build ./...`. Per-service modules give each language a clean tree; import paths of all existing packages are unchanged relative to their module.
 - **Consequence:** run Go commands from `services/api` (README updated); CI sets `working-directory: services/api`. ADR-0002 is superseded, not deleted.
 
+## ADR-0015 — Recurrence expanded at read time, RRULE-lite semantics
+
+- **Date:** 2026-08-25
+- **Decision:** events store one row with an optional `recurrence_rule` (`FREQ=DAILY|WEEKLY|MONTHLY;INTERVAL=n;COUNT=n|UNTIL=YYYYMMDD`, unknown tokens → 400). `GET /v1/events?from=&to=` expands occurrences in Go at read time — no materialized instance rows. Semantics: each occurrence derives from the ORIGINAL start (monthly clamping never compounds: Jan 31 → Feb 28 → Mar 31); COUNT includes the original occurrence; UNTIL is inclusive by calendar day; a safety cap of ~5y daily bounds UNTIL-less/COUNT-less rules. All day math is UTC.
+- **Why:** personal-scale data makes read-time expansion cheap; avoids sync drift between series definition and instances; editing = whole-series edit (per-occurrence overrides are out of scope v1).
+- **Consequence:** per-occurrence edits/cancellations need a future `event_overrides` table + ADR; expansion cost is bounded by COUNT/UNTIL/window.
+
+## ADR-0016 — Habit streak semantics
+
+- **Date:** 2026-08-25
+- **Decision:** daily habits: current streak = consecutive checked days ending today, with yesterday-grace (today unchecked still counts the run ending yesterday). Weekly habits: current streak = consecutive target-meeting ISO weeks (Mon–Sun), same grace for the in-progress week; `week_done` tracks progress vs `target_per_week`. Longest streak uses identical qualification rules over full history.
+- **Why:** grace prevents the demotivating "streak reset every morning" artifact while staying honest; weekly targets map to real habit science (X times per week).
+- **Consequence:** streak math lives pure in `domain/planner` (unit-tested); store attaches it on habit reads.
+
 ---
 
 Template for the next ADR:

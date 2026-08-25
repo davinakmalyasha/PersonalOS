@@ -99,6 +99,67 @@ export function currentMonth(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+// ---- Planner ----
+
+export type Task = {
+  id: string;
+  title: string;
+  notes: string;
+  status: "todo" | "doing" | "done";
+  priority: "low" | "med" | "high";
+  due_date: string | null;
+  project: string | null;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  completed_at: string | null;
+};
+
+export type HabitStreaks = {
+  current: number;
+  longest: number;
+  done_today: boolean;
+  week_done: number;
+  target_per_week: number;
+};
+
+export type Habit = {
+  id: string;
+  name: string;
+  description: string;
+  cadence: "daily" | "weekly";
+  target_per_week: number;
+  color: string | null;
+  created_at: string;
+  archived_at: string | null;
+  dates?: string[];
+  streaks: HabitStreaks;
+};
+
+export type Occurrence = {
+  event_id: string;
+  title: string;
+  description: string;
+  location: string;
+  tags: string[];
+  date: string;
+  starts_at: string;
+  ends_at?: string;
+  series: boolean;
+};
+
+export type TodayBundle = {
+  date: string;
+  overdue: Task[];
+  due_today: Task[];
+  habits: (Habit & { due_today: boolean; done_today: boolean })[];
+  events: Occurrence[];
+};
+
+export function todayStr(): string {
+  return new Date().toISOString().slice(0, 10);
+}
+
 export function formatMinor(minor: number, currency = "IDR"): string {
   const major = minor / 100;
   try {
