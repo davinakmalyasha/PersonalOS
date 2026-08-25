@@ -1,7 +1,8 @@
-package store
+﻿package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 )
@@ -106,4 +107,51 @@ func (f *Finance) DeleteAccount(id string) error {
 
 func isUniqueErr(err error) bool {
 	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
+}
+
+// ---- Import profile (per-account CSV mapping persistence) ----
+
+// ImportProfile is the persisted column mapping + date layout for an account.
+type ImportProfile struct {
+	Mapping    map[string]int `json:"mapping"`
+	DateFormat string         `json:"date_format"`
+}
+
+// GetImportProfile returns the saved profile, or nil when none exists.
+func (f *Finance) GetImportProfile(accountID string) (*ImportProfile, error) {
+	var raw string
+	err := f.DB.QueryRow(`SELECT settings FROM accounts WHERE id=?`, accountID).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, err
+	}
+	var settings struct {
+		ImportProfile *ImportProfile `json:"import_profile"`
+	}
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil {
+		return nil, nil // corrupt settings â€” treat as absent
+	}
+	return settings.ImportProfile, nil
+}
+
+// SaveImportProfile merges the profile into the account's settings JSON.
+func (f *Finance) SaveImportProfile(accountID string, p ImportProfile) error {
+	var raw string
+	err := f.DB.QueryRow(`SELECT settings FROM accounts WHERE id=?`, accountID).Scan(&raw)
+	if err != nil {
+		return err
+	}
+	var settings map[string]interface{}
+	if err := json.Unmarshal([]byte(raw), &settings); err != nil || settings == nil {
+		settings = map[string]interface{}{}
+	}
+	settings["import_profile"] = p
+	b, err := json.Marshal(settings)
+	if err != nil {
+		return err
+	}
+	_, err = f.DB.Exec(`UPDATE accounts SET settings=? WHERE id=?`, string(b), accountID)
+	return err
 }

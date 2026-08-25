@@ -1,4 +1,4 @@
-package finance
+﻿package finance
 
 import (
 	"strings"
@@ -23,7 +23,7 @@ a,b,c
 `
 
 func TestParseCSVEnglishSingleAmount(t *testing.T) {
-	rows, errs, err := ParseCSV(strings.NewReader(sampleEN), nil, "")
+	rows, errs, _, _, err := ParseCSV(strings.NewReader(sampleEN), nil, "")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -45,18 +45,18 @@ func TestParseCSVEnglishSingleAmount(t *testing.T) {
 }
 
 func TestParseCSVIndonesianSplitColumns(t *testing.T) {
-	rows, _, err := ParseCSV(strings.NewReader(sampleID), nil, "")
+	rows, _, _, _, err := ParseCSV(strings.NewReader(sampleID), nil, "")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
 	if len(rows) != 3 {
 		t.Fatalf("expected 3 valid rows (broken skipped), got %d", len(rows))
 	}
-	// Debit 250000 → -25000000 minor units.
+	// Debit 250000 â†’ -25000000 minor units.
 	if rows[0].Amount != -25000000 {
 		t.Fatalf("debit sign/amount wrong: %d", rows[0].Amount)
 	}
-	// Credit 8.500.000 → +850000000.
+	// Credit 8.500.000 â†’ +850000000.
 	if rows[1].Amount != 850000000 {
 		t.Fatalf("credit amount wrong: %d", rows[1].Amount)
 	}
@@ -67,7 +67,7 @@ func TestParseCSVIndonesianSplitColumns(t *testing.T) {
 
 func TestParseCSVExplicitOverride(t *testing.T) {
 	override := &ColumnMapping{Date: 0, Description: 1, Amount: 2, Merchant: -1, Debit: -1, Credit: -1}
-	rows, _, err := ParseCSV(strings.NewReader(sampleEN), override, "2006-01-02")
+	rows, _, _, _, err := ParseCSV(strings.NewReader(sampleEN), override, "2006-01-02")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -77,7 +77,7 @@ func TestParseCSVExplicitOverride(t *testing.T) {
 }
 
 func TestParseCSVErrorsCollected(t *testing.T) {
-	_, errs, err := ParseCSV(strings.NewReader(sampleID), nil, "")
+	_, errs, _, _, err := ParseCSV(strings.NewReader(sampleID), nil, "")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -87,7 +87,7 @@ func TestParseCSVErrorsCollected(t *testing.T) {
 }
 
 func TestDetectMappingFailure(t *testing.T) {
-	if _, _, err := ParseCSV(strings.NewReader(sampleNoHeader), nil, ""); err == nil {
+	if _, _, _, _, err := ParseCSV(strings.NewReader(sampleNoHeader), nil, ""); err == nil {
 		t.Fatal("expected mapping failure for unrecognized header")
 	}
 }

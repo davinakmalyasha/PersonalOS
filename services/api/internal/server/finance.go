@@ -391,6 +391,7 @@ func (s *Server) handleUpsertBudget(w http.ResponseWriter, r *http.Request) {
 		CategoryID string `json:"category_id"`
 		Month      string `json:"month"`
 		Amount     *int64 `json:"amount_minor"`
+		Rollover   *bool  `json:"rollover"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
@@ -410,7 +411,7 @@ func (s *Server) handleUpsertBudget(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid budget", details...)
 		return
 	}
-	b, err := s.finance.UpsertBudget(req.CategoryID, req.Month, *req.Amount)
+	b, err := s.finance.UpsertBudget(req.CategoryID, req.Month, *req.Amount, req.Rollover != nil && *req.Rollover)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())

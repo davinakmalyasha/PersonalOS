@@ -1,4 +1,4 @@
-package store
+﻿package store
 
 import (
 	"database/sql"
@@ -19,7 +19,10 @@ type Task struct {
 	Priority       string   `json:"priority"`
 	DueDate        *string  `json:"due_date"`
 	Project        *string  `json:"project"`
-	RecurrenceRule *string  `json:"recurrence_rule"` // RRULE-lite; completing spawns the next instance
+	RecurrenceRule *string  `json:"recurrence_rule"`
+	ParentID       *string  `json:"parent_id"`
+	BlockedBy      *string  `json:"blocked_by"`
+	EstimateMin    *int     `json:"estimate_minutes"`
 	Tags           []string `json:"tags"`
 	CreatedAt      string   `json:"created_at"`
 	UpdatedAt      string   `json:"updated_at"`
@@ -34,6 +37,7 @@ type TaskFilter struct {
 	Due       string // exact date
 	DueBefore string // due on/before date (overdue scans)
 	Project   string
+	ParentID  string // subtask filter; "root" = top-level only
 	Tag       string
 	Q         string
 	Page      int
@@ -71,7 +75,7 @@ func splitTags(raw string) []string {
 	return out
 }
 
-func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, project *string, tags []string, recurrenceRule *string) (Task, error) {
+func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, project *string, tags []string, recurrenceRule *string, parentID, blockedBy *string, estimateMin *int) (Task, error) {
 	if status == "" {
 		status = "todo"
 	}
@@ -88,8 +92,30 @@ func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, pro
 	} else {
 		recurrenceRule = nil
 	}
+	// Subtask rules: parent must exist and be a top-level task (no grandchildren).
+	if parentID != nil && *parentID != "" {
+		parent, err := p.GetTask(*parentID)
+		if err != nil {
+			return Task{}, err
+		}
+		if parent.ParentID != nil {
+			return Task{}, ErrInvalid
+		}
+	} else {
+		parentID = nil
+	}
+	if blockedBy != nil && *blockedBy != "" {
+		if _, err := p.GetTask(*blockedBy); err != nil {
+			return Task{}, err
+		}
+	} else {
+		blockedBy = nil
+	}
+	if estimateMin != nil && *estimateMin < 0 {
+		return Task{}, ErrInvalid
+	}
 	now := NowRFC3339()
-	var due, proj, rec interface{}
+	var due, proj, rec, parent, blocked, est interface{}
 	if dueDate != nil && *dueDate != "" {
 		due = *dueDate
 	}
@@ -99,6 +125,15 @@ func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, pro
 	if recurrenceRule != nil {
 		rule := strings.TrimSpace(*recurrenceRule)
 		rec = rule
+	}
+	if parentID != nil {
+		parent = *parentID
+	}
+	if blockedBy != nil {
+		blocked = *blockedBy
+	}
+	if estimateMin != nil {
+		est = *estimateMin
 	}
 	var completed interface{}
 	if status == "done" {
@@ -112,6 +147,18 @@ func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, pro
 		rule := strings.TrimSpace(*recurrenceRule)
 		t.RecurrenceRule = &rule
 	}
+	if parentID != nil {
+		v := *parentID
+		t.ParentID = &v
+	}
+	if blockedBy != nil {
+		v := *blockedBy
+		t.BlockedBy = &v
+	}
+	if estimateMin != nil {
+		v := *estimateMin
+		t.EstimateMin = &v
+	}
 	if due != nil {
 		v := due.(string)
 		t.DueDate = &v
@@ -124,20 +171,21 @@ func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, pro
 		t.CompletedAt = &now
 	}
 	_, err := p.DB.Exec(`
-		INSERT INTO tasks (id,title,notes,status,priority,due_date,project,recurrence_rule,tags,created_at,updated_at,completed_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		t.ID, t.Title, t.Notes, t.Status, t.Priority, due, proj, rec, joinTags(t.Tags), now, now, completed)
+		INSERT INTO tasks (id,title,notes,status,priority,due_date,project,recurrence_rule,parent_id,blocked_by,estimate_minutes,tags,created_at,updated_at,completed_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		t.ID, t.Title, t.Notes, t.Status, t.Priority, due, proj, rec, parent, blocked, est, joinTags(t.Tags), now, now, completed)
 	if err != nil {
 		return Task{}, err
 	}
 	return p.GetTask(t.ID)
 }
 
-const taskCols = `id,title,notes,status,priority,due_date,project,recurrence_rule,tags,created_at,updated_at,completed_at`
+const taskCols = `id,title,notes,status,priority,due_date,project,recurrence_rule,parent_id,blocked_by,estimate_minutes,tags,created_at,updated_at,completed_at`
 
 func taskScan(t *Task, tagsRaw *string) []interface{} {
 	return []interface{}{&t.ID, &t.Title, &t.Notes, &t.Status, &t.Priority,
-		&t.DueDate, &t.Project, &t.RecurrenceRule, tagsRaw, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt}
+		&t.DueDate, &t.Project, &t.RecurrenceRule, &t.ParentID, &t.BlockedBy, &t.EstimateMin,
+		tagsRaw, &t.CreatedAt, &t.UpdatedAt, &t.CompletedAt}
 }
 
 func (p *Planner) getTaskBy(q string, args ...interface{}) (Task, error) {
@@ -182,6 +230,14 @@ func (p *Planner) buildTaskWhere(f TaskFilter) (string, []interface{}) {
 	if f.Project != "" {
 		where = append(where, "project=?")
 		args = append(args, f.Project)
+	}
+	switch f.ParentID {
+	case "":
+	case "root":
+		where = append(where, "parent_id IS NULL")
+	default:
+		where = append(where, "parent_id=?")
+		args = append(args, f.ParentID)
 	}
 	if f.Tag != "" {
 		where = append(where, "tags LIKE ?")
@@ -237,6 +293,9 @@ type TaskUpdate struct {
 	DueDate        *string // empty string clears
 	Project        *string // empty string clears
 	RecurrenceRule *string // empty string clears; validated
+	ParentID       *string // set once at create; PATCH only validates/clears
+	BlockedBy      *string // empty string clears; validated
+	EstimateMin    **int   // ptr-to-nil clears
 	Tags           *[]string
 }
 
@@ -291,6 +350,37 @@ func (p *Planner) UpdateTask(id string, u TaskUpdate) (Task, error) {
 			cur.RecurrenceRule = &rule
 		}
 	}
+	if u.ParentID != nil {
+		if strings.TrimSpace(*u.ParentID) == "" {
+			cur.ParentID = nil
+		} else {
+			parent, perr := p.GetTask(*u.ParentID)
+			if perr != nil {
+				return Task{}, perr
+			}
+			if parent.ParentID != nil {
+				return Task{}, ErrInvalid // no grandchildren
+			}
+			cur.ParentID = u.ParentID
+		}
+	}
+	if u.BlockedBy != nil {
+		if strings.TrimSpace(*u.BlockedBy) == "" || *u.BlockedBy == id {
+			cur.BlockedBy = nil
+		} else {
+			if _, berr := p.GetTask(*u.BlockedBy); berr != nil {
+				return Task{}, berr
+			}
+			cur.BlockedBy = u.BlockedBy
+		}
+	}
+	if u.EstimateMin != nil {
+		if *u.EstimateMin == nil || **u.EstimateMin >= 0 {
+			cur.EstimateMin = *u.EstimateMin
+		} else {
+			return Task{}, ErrInvalid
+		}
+	}
 
 	now := NowRFC3339()
 	cur.UpdatedAt = now
@@ -306,7 +396,7 @@ func (p *Planner) UpdateTask(id string, u TaskUpdate) (Task, error) {
 		}
 	}
 
-	var due, proj, rec, completed interface{}
+	var due, proj, rec, parent, blocked, est, completed interface{}
 	if cur.DueDate != nil {
 		due = *cur.DueDate
 	}
@@ -316,13 +406,22 @@ func (p *Planner) UpdateTask(id string, u TaskUpdate) (Task, error) {
 	if cur.RecurrenceRule != nil {
 		rec = *cur.RecurrenceRule
 	}
+	if cur.ParentID != nil {
+		parent = *cur.ParentID
+	}
+	if cur.BlockedBy != nil {
+		blocked = *cur.BlockedBy
+	}
+	if cur.EstimateMin != nil {
+		est = *cur.EstimateMin
+	}
 	if cur.CompletedAt != nil {
 		completed = *cur.CompletedAt
 	}
 	_, err = p.DB.Exec(`
-		UPDATE tasks SET title=?, notes=?, status=?, priority=?, due_date=?, project=?, recurrence_rule=?, tags=?, updated_at=?, completed_at=?
+		UPDATE tasks SET title=?, notes=?, status=?, priority=?, due_date=?, project=?, recurrence_rule=?, parent_id=?, blocked_by=?, estimate_minutes=?, tags=?, updated_at=?, completed_at=?
 		WHERE id=?`,
-		cur.Title, cur.Notes, cur.Status, cur.Priority, due, proj, rec, joinTags(cur.Tags), now, completed, id)
+		cur.Title, cur.Notes, cur.Status, cur.Priority, due, proj, rec, parent, blocked, est, joinTags(cur.Tags), now, completed, id)
 	if err != nil {
 		return Task{}, err
 	}
@@ -352,7 +451,7 @@ func (p *Planner) spawnRecurringInstance(done Task) (Task, error) {
 				}
 			}
 			if u.Before(base.AddDate(0, 0, 1)) {
-				return done, nil // series exhausted — keep the completed task as-is
+				return done, nil // series exhausted â€” keep the completed task as-is
 			}
 		}
 	}
@@ -365,7 +464,7 @@ func (p *Planner) spawnRecurringInstance(done Task) (Task, error) {
 	next := nextOccurrenceAfter(rule, base)
 	nextDue := next.Format("2006-01-02")
 	dueP := &nextDue
-	return p.CreateTask(done.Title, done.Notes, "todo", done.Priority, dueP, done.Project, done.Tags, done.RecurrenceRule)
+	return p.CreateTask(done.Title, done.Notes, "todo", done.Priority, dueP, done.Project, done.Tags, done.RecurrenceRule, nil, nil, nil)
 }
 
 // nextOccurrenceAfter returns the first occurrence date strictly after base,

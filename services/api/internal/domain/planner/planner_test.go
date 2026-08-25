@@ -1,4 +1,4 @@
-package planner
+﻿package planner
 
 import (
 	"reflect"
@@ -90,13 +90,13 @@ func TestExpandMonthlyClampShortMonth(t *testing.T) {
 func TestStreaksDaily(t *testing.T) {
 	today := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
 
-	// Checked today + previous 3 days → current 4.
+	// Checked today + previous 3 days â†’ current 4.
 	s := ComputeStreaks([]string{"2026-08-22", "2026-08-23", "2026-08-24", "2026-08-25"}, "daily", 7, today)
 	if s.Current != 4 || !s.DoneToday {
 		t.Fatalf("current streak = %d doneToday=%v, want 4/true", s.Current, s.DoneToday)
 	}
 
-	// Grace: today missing but yesterday checked → streak continues (ends yesterday).
+	// Grace: today missing but yesterday checked â†’ streak continues (ends yesterday).
 	s = ComputeStreaks([]string{"2026-08-22", "2026-08-23", "2026-08-24"}, "daily", 7, today)
 	if s.Current != 3 || s.DoneToday {
 		t.Fatalf("grace streak = %d doneToday=%v, want 3/false", s.Current, s.DoneToday)
@@ -132,7 +132,7 @@ func TestStreaksLongestVsCurrent(t *testing.T) {
 func TestStreaksWeeklyTarget(t *testing.T) {
 	// Current week: Mon 2026-08-24 .. Sun 2026-08-30. Today = Tue 08-25.
 	today := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
-	// Target 3x/week. Last week (08-17..23): 3 checkoffs → qualifies. Week before: 2 → not.
+	// Target 3x/week. Last week (08-17..23): 3 checkoffs â†’ qualifies. Week before: 2 â†’ not.
 	dates := []string{"2026-08-18", "2026-08-20", "2026-08-21", "2026-08-22", "2026-08-24"}
 	s := ComputeStreaks(dates, "weekly", 3, today)
 	if s.WeekDone != 1 {
@@ -149,7 +149,7 @@ func TestStreaksWeeklyTarget(t *testing.T) {
 
 func TestStreaksWeeklyLongestRun(t *testing.T) {
 	today := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
-	// Weeks of Jul 27, Aug 3, Aug 10 each have 3+ checkoffs (target 3) → run of 3.
+	// Weeks of Jul 27, Aug 3, Aug 10 each have 3+ checkoffs (target 3) â†’ run of 3.
 	dates := []string{
 		"2026-07-28", "2026-07-30", "2026-08-01",
 		"2026-08-03", "2026-08-05", "2026-08-06",
@@ -160,7 +160,7 @@ func TestStreaksWeeklyLongestRun(t *testing.T) {
 		t.Fatalf("longest = %d, want 3", s.Longest)
 	}
 	// Current week (Aug 24..30) empty; grace looks at last week (Aug 17..23):
-	// no checkoffs there → current streak 0.
+	// no checkoffs there â†’ current streak 0.
 	if s.Current != 0 {
 		t.Fatalf("current = %d, want 0", s.Current)
 	}
@@ -190,26 +190,26 @@ func TestHabitDueToday(t *testing.T) {
 func TestConsistency30(t *testing.T) {
 	today := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
 
-	// 15 checkoffs over trailing 30 days, all days scheduled → 50%.
+	// 15 checkoffs over trailing 30 days, all days scheduled â†’ 50%.
 	var dates []string
 	for i := 0; i < 30; i += 2 {
 		dates = append(dates, today.AddDate(0, 0, -i).Format("2006-01-02"))
 	}
-	if got := Consistency30(dates, "1111111", today); got != 50 {
+	if got := Consistency30(dates, "1111111", today, nil); got != 50 {
 		t.Fatalf("consistency = %d, want 50", got)
 	}
 
-	// Empty history → 0.
-	if got := Consistency30(nil, "1111111", today); got != 0 {
+	// Empty history â†’ 0.
+	if got := Consistency30(nil, "1111111", today, nil); got != 0 {
 		t.Fatalf("empty consistency = %d, want 0", got)
 	}
 
-	// Perfect: 30 consecutive days → 100%.
+	// Perfect: 30 consecutive days â†’ 100%.
 	var full []string
 	for i := 0; i < 30; i++ {
 		full = append(full, today.AddDate(0, 0, -i).Format("2006-01-02"))
 	}
-	if got := Consistency30(full, "1111111", today); got != 100 {
+	if got := Consistency30(full, "1111111", today, nil); got != 100 {
 		t.Fatalf("perfect consistency = %d, want 100", got)
 	}
 }

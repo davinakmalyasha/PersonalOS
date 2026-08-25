@@ -49,14 +49,17 @@ func (s *Server) requirePlanner(w http.ResponseWriter) (*store.Planner, bool) {
 // ---- Tasks ----
 
 type taskReq struct {
-	Title          string   `json:"title"`
-	Notes          string   `json:"notes"`
-	Status         string   `json:"status"`
-	Priority       string   `json:"priority"`
-	DueDate        *string  `json:"due_date"`
-	Project        *string  `json:"project"`
-	RecurrenceRule *string  `json:"recurrence_rule"`
-	Tags           []string `json:"tags"`
+	Title           string   `json:"title"`
+	Notes           string   `json:"notes"`
+	Status          string   `json:"status"`
+	Priority        string   `json:"priority"`
+	DueDate         *string  `json:"due_date"`
+	Project         *string  `json:"project"`
+	RecurrenceRule  *string  `json:"recurrence_rule"`
+	ParentID        *string  `json:"parent_id"`
+	BlockedBy       *string  `json:"blocked_by"`
+	EstimateMinutes *int     `json:"estimate_minutes"`
+	Tags            []string `json:"tags"`
 }
 
 var taskStatuses = map[string]bool{"todo": true, "doing": true, "done": true}
@@ -91,7 +94,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid task", details...)
 		return
 	}
-	t, err := p.CreateTask(req.Title, req.Notes, req.Status, req.Priority, req.DueDate, req.Project, req.Tags, req.RecurrenceRule)
+	t, err := p.CreateTask(req.Title, req.Notes, req.Status, req.Priority, req.DueDate, req.Project, req.Tags, req.RecurrenceRule, req.ParentID, req.BlockedBy, req.EstimateMinutes)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -122,6 +125,7 @@ func (s *Server) handleListTasks(w http.ResponseWriter, r *http.Request) {
 		Due:       q.Get("due"),
 		DueBefore: q.Get("due_before"),
 		Project:   q.Get("project"),
+		ParentID:  q.Get("parent_id"),
 		Tag:       q.Get("tag"),
 		Q:         q.Get("q"),
 		Page:      int(page),
@@ -161,14 +165,17 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 }
 
 type taskPatch struct {
-	Title          *string   `json:"title"`
-	Notes          *string   `json:"notes"`
-	Status         *string   `json:"status"`
-	Priority       *string   `json:"priority"`
-	DueDate        *string   `json:"due_date"`
-	Project        **string  `json:"project"`
-	RecurrenceRule **string  `json:"recurrence_rule"`
-	Tags           *[]string `json:"tags"`
+	Title           *string   `json:"title"`
+	Notes           *string   `json:"notes"`
+	Status          *string   `json:"status"`
+	Priority        *string   `json:"priority"`
+	DueDate         *string   `json:"due_date"`
+	Project         **string  `json:"project"`
+	RecurrenceRule  **string  `json:"recurrence_rule"`
+	ParentID        *string   `json:"parent_id"`
+	BlockedBy       *string   `json:"blocked_by"`
+	EstimateMinutes **int     `json:"estimate_minutes"`
+	Tags            *[]string `json:"tags"`
 }
 
 func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +212,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if req.RecurrenceRule != nil {
 		u.RecurrenceRule = *req.RecurrenceRule
 	}
+	u.ParentID = req.ParentID
+	u.BlockedBy = req.BlockedBy
+	u.EstimateMin = req.EstimateMinutes
 	t, err := p.UpdateTask(chiURLParam(r, "id"), u)
 	if err != nil {
 		if !mapStoreErr(w, err) {
@@ -312,6 +322,7 @@ type habitPatch struct {
 	Cadence       *string  `json:"cadence"`
 	TargetPerWeek *int     `json:"target_per_week"`
 	Weekdays      *string  `json:"weekdays"`
+	PausedUntil   **string `json:"paused_until"`
 	Color         **string `json:"color"`
 	Archived      *bool    `json:"archived"`
 }
@@ -337,7 +348,7 @@ func (s *Server) handleUpdateHabit(w http.ResponseWriter, r *http.Request) {
 	h, err := p.UpdateHabit(chiURLParam(r, "id"), store.HabitUpdate{
 		Name: req.Name, Description: req.Description, Cadence: req.Cadence,
 		TargetPerWeek: req.TargetPerWeek, Weekdays: req.Weekdays,
-		Color: req.Color, Archived: req.Archived,
+		PausedUntil: req.PausedUntil, Color: req.Color, Archived: req.Archived,
 	})
 	if err != nil {
 		if !mapStoreErr(w, err) {

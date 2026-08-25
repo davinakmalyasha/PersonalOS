@@ -576,7 +576,7 @@ func (s *Server) handlePromoteItem(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		t, err := s.planner.CreateTask(item.Title, item.Body, "", "med", nil, nil, item.Tags, nil)
+		t, err := s.planner.CreateTask(item.Title, item.Body, "", "med", nil, nil, item.Tags, nil, nil, nil, nil)
 		if err != nil {
 			if !mapStoreErr(w, err) {
 				fail(w, http.StatusInternalServerError, err.Error())

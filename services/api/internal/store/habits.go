@@ -1,4 +1,4 @@
-package store
+﻿package store
 
 import (
 	"database/sql"
@@ -18,6 +18,7 @@ type Habit struct {
 	Cadence       string  `json:"cadence"`
 	TargetPerWeek int     `json:"target_per_week"`
 	Weekdays      string  `json:"weekdays"` // Mon-first schedule mask, e.g. 1110100
+	PausedUntil   *string `json:"paused_until"` // YYYY-MM-DD; not due while paused
 	Color         *string `json:"color"`
 	CreatedAt     string  `json:"created_at"`
 	ArchivedAt    *string `json:"archived_at"`
@@ -33,6 +34,7 @@ type HabitUpdate struct {
 	Cadence       *string
 	TargetPerWeek *int
 	Weekdays      *string
+	PausedUntil   **string
 	Color         **string
 	Archived      *bool
 }
@@ -90,20 +92,20 @@ func (p *Planner) CreateHabit(name, description, cadence string, targetPerWeek i
 		h.Color = nil
 	}
 	_, err := p.DB.Exec(`
-		INSERT INTO habits (id,name,description,cadence,target_per_week,weekdays,color,created_at)
-		VALUES (?,?,?,?,?,?,?,?)`,
-		h.ID, h.Name, h.Description, h.Cadence, h.TargetPerWeek, h.Weekdays, col, h.CreatedAt)
+		INSERT INTO habits (id,name,description,cadence,target_per_week,weekdays,paused_until,color,created_at)
+		VALUES (?,?,?,?,?,?,?,?,?)`,
+		h.ID, h.Name, h.Description, h.Cadence, h.TargetPerWeek, h.Weekdays, nil, col, h.CreatedAt)
 	if err != nil {
 		return Habit{}, err
 	}
 	return h, nil
 }
 
-const habitCols = `id,name,description,cadence,target_per_week,weekdays,color,created_at,archived_at`
+const habitCols = `id,name,description,cadence,target_per_week,weekdays,paused_until,color,created_at,archived_at`
 
 func habitScan(h *Habit) []interface{} {
 	return []interface{}{&h.ID, &h.Name, &h.Description, &h.Cadence,
-		&h.TargetPerWeek, &h.Weekdays, &h.Color, &h.CreatedAt, &h.ArchivedAt}
+		&h.TargetPerWeek, &h.Weekdays, &h.PausedUntil, &h.Color, &h.CreatedAt, &h.ArchivedAt}
 }
 
 func (p *Planner) GetHabit(id string) (Habit, error) {
@@ -152,7 +154,7 @@ func (p *Planner) attachStreaks(h *Habit, today time.Time) {
 	}
 	h.Dates = dates
 	h.Streaks = planner.ComputeStreaks(dates, h.Cadence, h.TargetPerWeek, today)
-	h.Streaks.Consistency30 = planner.Consistency30(dates, weekdaysOf(h), today)
+	h.Streaks.Consistency30 = planner.Consistency30(dates, weekdaysOf(h), today, h.PausedUntil)
 }
 
 func (p *Planner) allCheckoffDates(habitID string) ([]string, error) {
@@ -197,7 +199,7 @@ func (p *Planner) UpdateHabit(id string, u HabitUpdate) (Habit, error) {
 		}
 		cur.TargetPerWeek = *u.TargetPerWeek
 	} else if cadenceChanged && cur.Cadence == "weekly" && cur.TargetPerWeek == 7 {
-		cur.TargetPerWeek = 3 // sensible default when flipping dailyâ†’weekly
+		cur.TargetPerWeek = 3 // sensible default when flipping dailyÃ¢â€ â€™weekly
 	}
 	if cur.Cadence == "daily" {
 		cur.TargetPerWeek = 7
@@ -207,6 +209,17 @@ func (p *Planner) UpdateHabit(id string, u HabitUpdate) (Habit, error) {
 			return Habit{}, ErrInvalid
 		}
 		cur.Weekdays = *u.Weekdays
+	}
+	if u.PausedUntil != nil {
+		if *u.PausedUntil == nil || **u.PausedUntil == "" {
+			cur.PausedUntil = nil
+		} else {
+			if _, perr := time.Parse("2006-01-02", **u.PausedUntil); perr != nil {
+				return Habit{}, ErrInvalid
+			}
+			v := **u.PausedUntil
+			cur.PausedUntil = &v
+		}
 	}
 	if u.Color != nil {
 		cur.Color = *u.Color // double pointer: nil means "not sent"; ptr-to-nil clears
@@ -220,17 +233,20 @@ func (p *Planner) UpdateHabit(id string, u HabitUpdate) (Habit, error) {
 		}
 	}
 
-	var col, archived interface{}
+	var col, archived, paused interface{}
 	if cur.Color != nil {
 		col = *cur.Color
 	}
 	if cur.ArchivedAt != nil {
 		archived = *cur.ArchivedAt
 	}
+	if cur.PausedUntil != nil {
+		paused = *cur.PausedUntil
+	}
 	_, err = p.DB.Exec(`
-		UPDATE habits SET name=?, description=?, cadence=?, target_per_week=?, weekdays=?, color=?, archived_at=?
+		UPDATE habits SET name=?, description=?, cadence=?, target_per_week=?, weekdays=?, paused_until=?, color=?, archived_at=?
 		WHERE id=?`,
-		cur.Name, cur.Description, cur.Cadence, cur.TargetPerWeek, cur.Weekdays, col, archived, id)
+		cur.Name, cur.Description, cur.Cadence, cur.TargetPerWeek, cur.Weekdays, paused, col, archived, id)
 	if err != nil {
 		return Habit{}, err
 	}
@@ -249,7 +265,7 @@ func (p *Planner) DeleteHabit(id string) error {
 }
 
 // ToggleCheckoff inserts the (habit,date) row when missing and removes it when
-// present â€” one call is always idempotent-safe to repeat in either state.
+// present Ã¢â‚¬â€ one call is always idempotent-safe to repeat in either state.
 // Returns whether the habit is checked after the toggle.
 func (p *Planner) ToggleCheckoff(habitID, date string) (bool, error) {
 	if _, err := p.getHabitRaw(habitID); err != nil {
@@ -263,15 +279,15 @@ func (p *Planner) ToggleCheckoff(habitID, date string) (bool, error) {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		return true, nil // inserted â†’ now done
+		return true, nil // inserted Ã¢â€ â€™ now done
 	}
-	// Already existed â†’ remove it.
+	// Already existed Ã¢â€ â€™ remove it.
 	res, err = p.DB.Exec(`DELETE FROM habit_checkoffs WHERE habit_id=? AND date=?`, habitID, date)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
-	return n == 0, nil // nothing deleted (concurrent re-insert?) â†’ still done
+	return n == 0, nil // nothing deleted (concurrent re-insert?) Ã¢â€ â€™ still done
 }
 
 // SetCheckoff forces a state instead of toggling; used by tests/tools that
@@ -333,7 +349,7 @@ func (p *Planner) CheckoffsBetween(habitID, from, to string) ([]string, error) {
 	return out, rows.Err()
 }
 
-// CheckoffsForDate maps habit_id â†’ checked for one calendar day.
+// CheckoffsForDate maps habit_id Ã¢â€ â€™ checked for one calendar day.
 func (p *Planner) CheckoffsForDate(date string) (map[string]bool, error) {
 	rows, err := p.DB.Query(`SELECT habit_id FROM habit_checkoffs WHERE date=?`, date)
 	if err != nil {

@@ -180,7 +180,15 @@ func (s *Server) handleImportTransactions(w http.ResponseWriter, r *http.Request
 	override := parseMappingOverride(r)
 	dateFormat := r.FormValue("date_format")
 
-	rows, rowErrs, err := finance.ParseCSV(bytesReader(data), override, dateFormat)
+	// No explicit mapping → fall back to the account's saved import profile.
+	if override == nil && dateFormat == "" {
+		if profile, perr := s.finance.GetImportProfile(accountID); perr == nil && profile != nil {
+			override = profileToOverride(profile)
+			dateFormat = profile.DateFormat
+		}
+	}
+
+	rows, rowErrs, resolvedMapping, resolvedLayout, err := finance.ParseCSV(bytesReader(data), override, dateFormat)
 	if err != nil {
 		fail(w, http.StatusBadRequest, err.Error(), fieldError{"csv", err.Error()})
 		return
@@ -213,6 +221,19 @@ func (s *Server) handleImportTransactions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	// Persist the resolved mapping as the account's import profile so future
+	// imports skip detection (profile is overridden by explicit form values).
+	if resolvedMapping != nil {
+		_ = s.finance.SaveImportProfile(accountID, store.ImportProfile{
+			Mapping: map[string]int{
+				"date_col": resolvedMapping.Date, "desc_col": resolvedMapping.Description,
+				"amount_col": resolvedMapping.Amount, "debit_col": resolvedMapping.Debit,
+				"credit_col": resolvedMapping.Credit, "merchant_col": resolvedMapping.Merchant,
+			},
+			DateFormat: resolvedLayout,
+		})
+	}
+
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"imported":         inserted,
 		"skipped":          res.Skipped,
@@ -220,6 +241,28 @@ func (s *Server) handleImportTransactions(w http.ResponseWriter, r *http.Request
 		"auto_categorized": res.AutoCategorized,
 		"errors":           res.Errors,
 	})
+}
+
+// profileToOverride converts a saved import profile into a column mapping.
+func profileToOverride(p *store.ImportProfile) *finance.ColumnMapping {
+	get := func(k string) int {
+		if v, ok := p.Mapping[k]; ok && v >= 0 {
+			return v
+		}
+		return -1
+	}
+	m := &finance.ColumnMapping{
+		Date:        get("date_col"),
+		Description: get("desc_col"),
+		Amount:      get("amount_col"),
+		Debit:       get("debit_col"),
+		Credit:      get("credit_col"),
+		Merchant:    get("merchant_col"),
+	}
+	if m.Date < 0 || m.Description < 0 || (m.Amount < 0 && m.Debit < 0 && m.Credit < 0) {
+		return nil // incomplete profile → fall back to auto-detect
+	}
+	return m
 }
 
 // parseMappingOverride reads explicit 0-based column indexes when provided.

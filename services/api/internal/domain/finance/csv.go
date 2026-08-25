@@ -10,12 +10,12 @@ import (
 
 // ColumnMapping holds resolved column indexes for a bank CSV export.
 type ColumnMapping struct {
-	Date        int
-	Description int
-	Amount      int // single-column mode
-	Debit       int // split-column mode (money out)
-	Credit      int // split-column mode (money in)
-	Merchant    int // optional; -1 when absent
+	Date        int `json:"date_col"`
+	Description int `json:"desc_col"`
+	Amount      int `json:"amount_col"` // single-column mode
+	Debit       int `json:"debit_col"`  // split-column mode (money out)
+	Credit      int `json:"credit_col"` // split-column mode (money in)
+	Merchant    int `json:"merchant_col"` // optional; -1 when absent
 }
 
 // HeaderSynonyms covers common English + Indonesian bank export headers.
@@ -89,14 +89,16 @@ type RowError struct {
 // ParseCSV reads the whole file: detects the separator, finds the header,
 // resolves the mapping (explicit overrides win), and parses rows. Rows with
 // bad cells are collected as errors and skipped rather than failing the batch.
-func ParseCSV(r io.Reader, override *ColumnMapping, dateFormat string) ([]TxnRow, []RowError, error) {
+// The resolved mapping + date layout are returned so callers can persist them
+// as an import profile.
+func ParseCSV(r io.Reader, override *ColumnMapping, dateFormat string) ([]TxnRow, []RowError, *ColumnMapping, string, error) {
 	raw, err := io.ReadAll(r)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, "", err
 	}
 	trimmed := strings.TrimLeft(string(raw), "\ufeff")
 	if strings.TrimSpace(trimmed) == "" {
-		return nil, nil, fmt.Errorf("empty CSV")
+		return nil, nil, nil, "", fmt.Errorf("empty CSV")
 	}
 	sep := detectSeparator(trimmed)
 
@@ -108,17 +110,17 @@ func ParseCSV(r io.Reader, override *ColumnMapping, dateFormat string) ([]TxnRow
 
 	records, err := cr.ReadAll()
 	if err != nil {
-		return nil, nil, fmt.Errorf("read csv: %w", err)
+		return nil, nil, nil, "", fmt.Errorf("read csv: %w", err)
 	}
 	if len(records) < 2 {
-		return nil, nil, fmt.Errorf("csv needs a header row plus at least one data row")
+		return nil, nil, nil, "", fmt.Errorf("csv needs a header row plus at least one data row")
 	}
 
 	mapping := override
 	if mapping == nil {
 		mapping, err = DetectMapping(records[0])
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, "", err
 		}
 	}
 
@@ -133,7 +135,7 @@ func ParseCSV(r io.Reader, override *ColumnMapping, dateFormat string) ([]TxnRow
 	if layout == "" {
 		layout = SniffDateLayout(dateCells)
 		if layout == "" {
-			return nil, nil, fmt.Errorf("could not determine date format from samples (pass date_format)")
+			return nil, nil, nil, "", fmt.Errorf("could not determine date format from samples (pass date_format)")
 		}
 	}
 
@@ -151,7 +153,7 @@ func ParseCSV(r io.Reader, override *ColumnMapping, dateFormat string) ([]TxnRow
 		}
 		rows = append(rows, row)
 	}
-	return rows, rowErrs, nil
+	return rows, rowErrs, mapping, layout, nil
 }
 
 func parseRow(rec []string, m *ColumnMapping, layout string) (TxnRow, error) {

@@ -1,8 +1,9 @@
-package server
+﻿package server
 
 import (
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/store"
 	"github.com/go-chi/chi/v5"
@@ -26,6 +27,18 @@ func (s *Server) mountExtras(r chi.Router) {
 	r.Get("/health/prs", s.handleExercisePRs)
 	// Universal extras.
 	r.Get("/items/expiring", s.handleExpiringItems)
+	// Phase 10a: finance intelligence + planner depth.
+	r.Get("/finance/net-worth", s.handleNetWorth)
+	r.Get("/finance/bills", s.handleUpcomingBills)
+	r.Route("/merchant_aliases", func(r chi.Router) {
+		r.Post("/", s.handleCreateAlias)
+		r.Get("/", s.handleListAliases)
+		r.Delete("/{id}", s.handleDeleteAlias)
+	})
+	r.Post("/events/{id}/exceptions", s.handleSetEventOverride)
+	r.Get("/events/{id}/exceptions", s.handleListEventOverrides)
+	r.Delete("/events/exceptions/{id}", s.handleDeleteEventOverride)
+	r.Get("/planner/review", s.handlePlannerReview)
 }
 
 // ---- Goals ----
@@ -197,4 +210,136 @@ func (s *Server) handleExpiringItems(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+// ---- Phase 10a: finance intelligence ----
+
+func (s *Server) handleNetWorth(w http.ResponseWriter, r *http.Request) {
+	out, err := s.finance.NetWorthSeries()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleUpcomingBills(w http.ResponseWriter, r *http.Request) {
+	days := 7
+	if n, ok := queryInt(r, "days"); ok {
+		days = int(n)
+	}
+	items, err := s.finance.UpcomingBills(days)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+func (s *Server) handleCreateAlias(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Pattern   string `json:"pattern"`
+		Canonical string `json:"canonical"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	a, err := s.finance.CreateAlias(req.Pattern, req.Canonical)
+	if err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, a)
+}
+
+func (s *Server) handleListAliases(w http.ResponseWriter, r *http.Request) {
+	items, err := s.finance.ListAliases()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+func (s *Server) handleDeleteAlias(w http.ResponseWriter, r *http.Request) {
+	if err := s.finance.DeleteAlias(chiURLParam(r, "id")); err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ---- Phase 10a: planner depth ----
+
+func (s *Server) handleSetEventOverride(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Date     string `json:"date"`
+		Action   string `json:"action"`
+		Title    *string `json:"title"`
+		StartsAt *string `json:"starts_at"`
+		EndsAt   *string `json:"ends_at"`
+		Location *string `json:"location"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	o, err := s.planner.SetEventOverride(chiURLParam(r, "id"), store.EventOverride{
+		EventID: chiURLParam(r, "id"), Date: req.Date, Action: req.Action,
+		Title: req.Title, StartsAt: req.StartsAt, EndsAt: req.EndsAt, Location: req.Location,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid exception",
+				fieldError{"date/action/starts_at", "YYYY-MM-DD; cancel|edit; RFC3339"})
+			return
+		}
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, o)
+}
+
+func (s *Server) handleListEventOverrides(w http.ResponseWriter, r *http.Request) {
+	items, err := s.planner.ListEventOverrides(chiURLParam(r, "id"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+func (s *Server) handleDeleteEventOverride(w http.ResponseWriter, r *http.Request) {
+	if err := s.planner.DeleteEventOverride(chiURLParam(r, "id")); err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (s *Server) handlePlannerReview(w http.ResponseWriter, r *http.Request) {
+	rb, err := s.planner.Review(time.Now(), r.URL.Query().Get("date"))
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid date", fieldError{"date", "YYYY-MM-DD"})
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	// Compose the finance part (spend + budgets for the containing month).
+	if sum, err := s.finance.SummaryMonth(rb.Month); err == nil && sum != nil {
+		rb.SpendMinor = sum.Outcome
+		rb.BudgetLines = sum.BudgetLines
+	}
+	writeJSON(w, http.StatusOK, rb)
 }

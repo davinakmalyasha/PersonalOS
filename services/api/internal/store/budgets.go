@@ -1,4 +1,4 @@
-package store
+﻿package store
 
 import (
 	"database/sql"
@@ -11,11 +11,12 @@ type Budget struct {
 	Category   string `json:"category,omitempty"`
 	Month      string `json:"month"`
 	Amount     int64  `json:"amount_minor"`
+	Rollover   bool   `json:"rollover"`
 	CreatedAt  string `json:"created_at,omitempty"`
 }
 
 // UpsertBudget inserts or updates the (category, month) budget.
-func (f *Finance) UpsertBudget(categoryID, month string, amount int64) (Budget, error) {
+func (f *Finance) UpsertBudget(categoryID, month string, amount int64, rollover bool) (Budget, error) {
 	if _, err := f.GetCategory(categoryID); err != nil {
 		return Budget{}, err
 	}
@@ -23,9 +24,9 @@ func (f *Finance) UpsertBudget(categoryID, month string, amount int64) (Budget, 
 	err := f.DB.QueryRow(`SELECT id FROM budgets WHERE category_id=? AND month=?`, categoryID, month).Scan(&existing)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		b := Budget{ID: NewID(), CategoryID: categoryID, Month: month, Amount: amount, CreatedAt: NowRFC3339()}
-		_, err = f.DB.Exec(`INSERT INTO budgets (id,category_id,month,amount,created_at) VALUES (?,?,?,?,?)`,
-			b.ID, b.CategoryID, b.Month, b.Amount, b.CreatedAt)
+		b := Budget{ID: NewID(), CategoryID: categoryID, Month: month, Amount: amount, Rollover: rollover, CreatedAt: NowRFC3339()}
+		_, err = f.DB.Exec(`INSERT INTO budgets (id,category_id,month,amount,rollover,created_at) VALUES (?,?,?,?,?,?)`,
+			b.ID, b.CategoryID, b.Month, b.Amount, b.Rollover, b.CreatedAt)
 		if err != nil {
 			return Budget{}, err
 		}
@@ -34,7 +35,7 @@ func (f *Finance) UpsertBudget(categoryID, month string, amount int64) (Budget, 
 	case err != nil:
 		return Budget{}, err
 	default:
-		if _, err := f.DB.Exec(`UPDATE budgets SET amount=? WHERE id=?`, amount, existing); err != nil {
+		if _, err := f.DB.Exec(`UPDATE budgets SET amount=?, rollover=? WHERE id=?`, amount, rollover, existing); err != nil {
 			return Budget{}, err
 		}
 		return f.GetBudget(existing)
@@ -44,9 +45,9 @@ func (f *Finance) UpsertBudget(categoryID, month string, amount int64) (Budget, 
 func (f *Finance) GetBudget(id string) (Budget, error) {
 	var b Budget
 	err := f.DB.QueryRow(`
-		SELECT b.id,b.category_id,b.month,b.amount,c.name,b.created_at
+		SELECT b.id,b.category_id,b.month,b.amount,b.rollover,c.name,b.created_at
 		FROM budgets b JOIN categories c ON c.id=b.category_id WHERE b.id=?`, id).
-		Scan(&b.ID, &b.CategoryID, &b.Month, &b.Amount, &b.Category, &b.CreatedAt)
+		Scan(&b.ID, &b.CategoryID, &b.Month, &b.Amount, &b.Rollover, &b.Category, &b.CreatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Budget{}, ErrNotFound
 	}
@@ -54,7 +55,7 @@ func (f *Finance) GetBudget(id string) (Budget, error) {
 }
 
 func (f *Finance) ListBudgets(monthFrom, monthTo string) ([]Budget, error) {
-	q := `SELECT b.id,b.category_id,b.month,b.amount,c.name FROM budgets b JOIN categories c ON c.id=b.category_id WHERE 1=1`
+	q := `SELECT b.id,b.category_id,b.month,b.amount,b.rollover,c.name FROM budgets b JOIN categories c ON c.id=b.category_id WHERE 1=1`
 	var args []interface{}
 	if monthFrom != "" {
 		q += ` AND b.month>=?`
@@ -73,7 +74,7 @@ func (f *Finance) ListBudgets(monthFrom, monthTo string) ([]Budget, error) {
 	out := []Budget{}
 	for rows.Next() {
 		var b Budget
-		if err := rows.Scan(&b.ID, &b.CategoryID, &b.Month, &b.Amount, &b.Category); err != nil {
+		if err := rows.Scan(&b.ID, &b.CategoryID, &b.Month, &b.Amount, &b.Rollover, &b.Category); err != nil {
 			return nil, err
 		}
 		out = append(out, b)

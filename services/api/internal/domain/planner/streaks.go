@@ -18,13 +18,18 @@ type Streaks struct {
 
 // scheduledDaysInWindow counts how many of the last `window` days (inclusive
 // of today) are scheduled per the weekdays bitmask ("1111111", Mon-first).
-func scheduledDaysInWindow(weekdays string, today time.Time, window int) int {
+// Days on/before pausedUntil (when set) are excused — neither scheduled nor
+// penalized.
+func scheduledDaysInWindow(weekdays string, today time.Time, window int, pausedUntil *string) int {
 	if len(weekdays) != 7 {
 		weekdays = "1111111"
 	}
 	n := 0
 	for i := 0; i < window; i++ {
 		d := today.AddDate(0, 0, -i)
+		if pausedUntil != nil && !d.After(parseDayOrToday(*pausedUntil, today)) {
+			continue
+		}
 		wd := int(d.Weekday()+6) % 7 // Mon=0..Sun=6
 		if weekdays[wd] == '1' {
 			n++
@@ -33,10 +38,18 @@ func scheduledDaysInWindow(weekdays string, today time.Time, window int) int {
 	return n
 }
 
+func parseDayOrToday(day string, today time.Time) time.Time {
+	if t, err := time.Parse(dateLayout, day); err == nil {
+		return t
+	}
+	return today
+}
+
 // Consistency30 computes the trailing-30-day consistency percentage against
-// the habit's weekday schedule. Daily habits with default mask = checked/30.
-func Consistency30(dates []string, weekdays string, today time.Time) int {
-	sched := scheduledDaysInWindow(weekdays, today, 30)
+// the habit's weekday schedule. Paused days are excused (excluded from the
+// denominator).
+func Consistency30(dates []string, weekdays string, today time.Time, pausedUntil *string) int {
+	sched := scheduledDaysInWindow(weekdays, today, 30, pausedUntil)
 	if sched == 0 {
 		return 0
 	}
@@ -46,8 +59,11 @@ func Consistency30(dates []string, weekdays string, today time.Time) int {
 	}
 	done := 0
 	for i := 0; i < 30; i++ {
-		day := today.AddDate(0, 0, -i).Format(dateLayout)
-		if _, ok := set[day]; ok {
+		day := today.AddDate(0, 0, -i)
+		if pausedUntil != nil && !day.After(parseDayOrToday(*pausedUntil, today)) {
+			continue
+		}
+		if _, ok := set[day.Format(dateLayout)]; ok {
 			done++
 		}
 	}

@@ -511,6 +511,74 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     },
   );
 
+  // ---------- Phase 10a: finance + planner intelligence ----------
+
+  server.tool(
+    "net_worth",
+    "Portfolio net-worth over time: cumulative per-account balances derived from all transactions.",
+    {},
+    async () => run(() => api.get("/v1/finance/net-worth")),
+  );
+
+  server.tool(
+    "upcoming_bills",
+    "Detected subscriptions due within the next N days.",
+    { days: intOpt().describe("default 7, max 90") },
+    async (a: ToolArgs) => run(() => api.get("/v1/finance/bills", { days: a.days })),
+  );
+
+  server.tool(
+    "manage_merchants",
+    "Merchant aliases: rewrite noisy bank merchants to clean names on create/import. action=list|create|delete.",
+    {
+      action: z.enum(["list", "create", "delete"]),
+      id: optStr(),
+      pattern: optStr().describe("substring matched case-insensitively"),
+      canonical: optStr().describe("clean name to store"),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "list":
+          return run(() => api.get("/v1/merchant_aliases"));
+        case "create":
+          return run(() => api.post("/v1/merchant_aliases", { pattern: a.pattern, canonical: a.canonical }));
+        default:
+          return run(() => api.del(`/v1/merchant_aliases/${a.id}`));
+      }
+    },
+  );
+
+  server.tool(
+    "set_event_exception",
+    "Override ONE occurrence of a recurring event: cancel it or edit fields for that date only.",
+    {
+      event_id: str(),
+      date: str().describe("YYYY-MM-DD occurrence"),
+      action: z.enum(["cancel", "edit"]),
+      title: z.string().optional(),
+      starts_at: optStr().describe("RFC3339"),
+      ends_at: optStr().describe("RFC3339"),
+      location: optStr(),
+    },
+    async (a: ToolArgs) =>
+      run(() =>
+        api.post(`/v1/events/${a.event_id}/exceptions`, {
+          date: a.date,
+          action: a.action,
+          title: a.title ?? null,
+          starts_at: a.starts_at ?? null,
+          ends_at: a.ends_at ?? null,
+          location: a.location ?? null,
+        }),
+      ),
+  );
+
+  server.tool(
+    "review_week",
+    "Weekly review bundle: completed tasks, habit consistency, events held, spend vs budgets.",
+    { date: optStr().describe("any date inside the week (YYYY-MM-DD), default current week") },
+    async (a: ToolArgs) => run(() => api.get("/v1/planner/review", { date: a.date })),
+  );
 // ---------- Phase 9: agentic depth ----------
 
   server.tool(

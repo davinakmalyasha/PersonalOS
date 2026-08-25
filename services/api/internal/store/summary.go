@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+	"time"
 )
 
 type MonthSummary struct {
@@ -145,12 +146,38 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 		var spent int64
 		_ = f.DB.QueryRow(`SELECT COALESCE(SUM(-amount),0) FROM transactions WHERE category_id=? AND date>=? AND date<? AND is_transfer=0`,
 			b.CategoryID, start, end).Scan(&spent)
+
+		effective := b.Amount
+		if b.Rollover {
+			prev := prevMonth(b.Month)
+			ps, pe, perr := monthBounds(prev)
+			if perr == nil {
+				var prevBudget, prevSpent int64
+				_ = f.DB.QueryRow(`SELECT amount FROM budgets WHERE category_id=? AND month=?`,
+					b.CategoryID, prev).Scan(&prevBudget)
+				_ = f.DB.QueryRow(`SELECT COALESCE(SUM(-amount),0) FROM transactions WHERE category_id=? AND date>=? AND date<? AND is_transfer=0`,
+					b.CategoryID, ps, pe).Scan(&prevSpent)
+				if carry := prevBudget - prevSpent; carry > 0 {
+					effective += carry
+				}
+			}
+		}
+
 		s.BudgetLines = append(s.BudgetLines, BudgetLine{
 			CategoryID: b.CategoryID, CategoryName: b.Category,
-			BudgetMinor: b.Amount, SpentMinor: spent, Over: spent > b.Amount,
+			BudgetMinor: effective, SpentMinor: spent, Over: spent > effective,
 		})
 	}
 	return s, nil
+}
+
+// prevMonth returns the month before "YYYY-MM".
+func prevMonth(month string) string {
+	t, err := time.Parse("2006-01", month)
+	if err != nil {
+		return month
+	}
+	return t.AddDate(0, -1, 0).Format("2006-01")
 }
 
 type SpendingPoint struct {

@@ -1,4 +1,4 @@
-package store
+﻿package store
 
 import (
 	"database/sql"
@@ -51,6 +51,7 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 	if merchant == "" {
 		merchant = firstN(rawDesc, 60)
 	}
+	merchant = f.ApplyAlias(merchant)
 	t := Transaction{
 		ID: NewID(), AccountID: accountID, AmountMinor: amount, Currency: "IDR",
 		Date: date, Merchant: merchant, RawDescription: rawDesc,
@@ -274,7 +275,7 @@ func (f *Finance) ImportTransactions(accountID, currency string, drafts []financ
 			cat = d.CategoryID
 		}
 		id := NewID()
-		res, err := stmt.Exec(id, accountID, d.Amount, currency, d.Date, d.Merchant, d.RawDesc, cat, d.Hash, created)
+		res, err := stmt.Exec(id, accountID, d.Amount, currency, d.Date, f.ApplyAlias(d.Merchant), d.RawDesc, cat, d.Hash, created)
 		if err != nil {
 			return inserted, err
 		}

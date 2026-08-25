@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.7.0",
-    "description": "Local-first personal platform. Phase 9: agentic depth — goals, subscription detection, transfer pairing, recurring tasks, habit schedules + rolling consistency, water intake, exercise PRs, reading highlights, expiry surfacing, live activity pulse."
+    "version": "0.8.0",
+    "description": "Local-first personal platform. Phase 10a: finance intelligence (net worth, upcoming bills, merchant aliases, budget rollover, import profiles) + planner depth (subtasks, dependencies, day-load estimates, event exceptions, habit pause, weekly review)."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
@@ -533,6 +533,54 @@
         "summary": "Items whose data JSON carries a date-like field (expires/due/…) within N days",
         "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30, "maximum": 365 } }],
         "responses": { "200": { "description": "ExpiringItem[]" } }
+      }
+    },
+    "/v1/finance/net-worth": {
+      "get": {
+        "operationId": "netWorth",
+        "summary": "Cumulative per-account balances over time (point per day with movement) + latest per-account balances",
+        "responses": { "200": { "description": "NetWorth" } }
+      }
+    },
+    "/v1/finance/bills": {
+      "get": {
+        "operationId": "upcomingBills",
+        "summary": "Detected subscriptions due within N days",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 7, "maximum": 90 } }],
+        "responses": { "200": { "description": "UpcomingBill[]" } }
+      }
+    },
+    "/v1/merchant_aliases": {
+      "get": { "operationId": "listAliases", "summary": "Merchant aliases (pattern→canonical, applied on create/import)", "responses": { "200": { "description": "aliases" } } },
+      "post": {
+        "operationId": "createAlias",
+        "summary": "Create alias {pattern, canonical}",
+        "responses": { "201": { "description": "created" }, "409": { "description": "duplicate pattern" } }
+      }
+    },
+    "/v1/merchant_aliases/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "delete": { "operationId": "deleteAlias", "summary": "Delete alias", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/events/{id}/exceptions": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "setEventException",
+        "summary": "Override ONE occurrence: {date, action: cancel|edit, title?, starts_at?, ends_at?, location?} (upsert per date)",
+        "responses": { "200": { "description": "stored override" }, "400": { "description": "validation error" }, "404": { "description": "missing event" } }
+      },
+      "get": { "operationId": "listEventExceptions", "summary": "Exceptions for the series", "responses": { "200": { "description": "overrides" } } }
+    },
+    "/v1/events/exceptions/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "delete": { "operationId": "deleteEventException", "summary": "Remove an exception (occurrence reverts to series)", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/planner/review": {
+      "get": {
+        "operationId": "plannerReview",
+        "summary": "Weekly review bundle (Mon–Sun of the given date): completed tasks, habit consistency, events, spend vs budgets",
+        "parameters": [{ "name": "date", "in": "query", "schema": { "type": "string", "format": "date" } }],
+        "responses": { "200": { "description": "ReviewBundle" }, "400": { "description": "bad date" } }
       }
     },
     "/openapi.json": {

@@ -1,4 +1,4 @@
-package finance
+﻿package finance
 
 import (
 	"strings"
@@ -18,7 +18,7 @@ func TestPrepareFirstImportCategorizes(t *testing.T) {
 2026-08-01,STARBUCKS COFFEE,-125.00
 2026-08-02,SALARY AUGUST,5000.00
 `
-	rows, errs, err := ParseCSV(strings.NewReader(csvRows), nil, "")
+	rows, errs, _, _, err := ParseCSV(strings.NewReader(csvRows), nil, "")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestPrepareSecondImportZeroDuplicates(t *testing.T) {
 2026-08-02,SALARY AUGUST,5000.00
 2026-08-03,TOKO ABC,250.00
 `
-	rows, errs, _ := ParseCSV(strings.NewReader(csvRows), nil, "")
+	rows, errs, _, _, _ := ParseCSV(strings.NewReader(csvRows), nil, "")
 	_, firstRes := Prepare(rows, errs, map[string]struct{}{}, nil)
 	if firstRes.Imported != 3 {
 		t.Fatalf("first import: %+v", firstRes)
@@ -54,7 +54,7 @@ func TestPrepareSecondImportZeroDuplicates(t *testing.T) {
 	// Simulate DB state from first run.
 	existing := existingKeys(rows...)
 
-	rows2, errs2, _ := ParseCSV(strings.NewReader(csvRows), nil, "")
+	rows2, errs2, _, _, _ := ParseCSV(strings.NewReader(csvRows), nil, "")
 	_, secondRes := Prepare(rows2, errs2, existing, nil)
 	if secondRes.Imported != 0 {
 		t.Fatalf("acceptance violated: second import imported %d", secondRes.Imported)
@@ -69,8 +69,8 @@ func TestPrepareInFileDuplicatesSkipped(t *testing.T) {
 2026-08-01,TOKO ABC,100.00
 2026-08-01,toko abc ,100.00
 `
-	rows, _, _ := ParseCSV(strings.NewReader(csvRows), nil, "")
-	// Same natural key after normalization → second is in-file duplicate.
+	rows, _, _, _, _ := ParseCSV(strings.NewReader(csvRows), nil, "")
+	// Same natural key after normalization â†’ second is in-file duplicate.
 	if NormalizeDescription("toko abc ") != NormalizeDescription("TOKO ABC") {
 		t.Fatal("precondition failed")
 	}
@@ -85,7 +85,7 @@ func TestPrepareInvalidRowsCounted(t *testing.T) {
 not-a-date,BROKEN,10.00
 2026-08-02,FINE,5.00
 `
-	rows, errs, err := ParseCSV(strings.NewReader(bad), nil, "")
+	rows, errs, _, _, err := ParseCSV(strings.NewReader(bad), nil, "")
 	if err != nil {
 		t.Fatalf("parse: %v", err)
 	}

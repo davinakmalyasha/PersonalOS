@@ -226,6 +226,10 @@ func (p *Planner) OccurrencesBetween(from, to string) ([]Occurrence, error) {
 	if err != nil {
 		return nil, err
 	}
+	overrides, err := p.overridesBetween(from, to)
+	if err != nil {
+		return nil, err
+	}
 	var out []Occurrence
 	for _, e := range events {
 		start, err := time.Parse(time.RFC3339, e.StartsAt)
@@ -246,6 +250,16 @@ func (p *Planner) OccurrencesBetween(from, to string) ([]Occurrence, error) {
 			}
 		}
 		for _, d := range days {
+			// Per-occurrence exceptions win over the series definition.
+			if ov, ok := overrides[e.ID+"|"+d]; ok {
+				if ov.Action == "cancel" {
+					continue
+				}
+				o := occurrenceFor(e, start, d)
+				applyOverride(&o, ov)
+				out = append(out, o)
+				continue
+			}
 			out = append(out, occurrenceFor(e, start, d))
 		}
 	}
