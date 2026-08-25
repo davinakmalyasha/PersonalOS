@@ -1,7 +1,8 @@
-package store
+﻿package store
 
 import (
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"strings"
 
@@ -153,7 +154,7 @@ type NoteUpdate struct {
 	Body    *string
 	Tags    *[]string
 	Pinned  *bool
-	Archive *bool // true → set archived_at; false → clear
+	Archive *bool // true â†’ set archived_at; false â†’ clear
 }
 
 func (k *Knowledge) UpdateNote(id string, u NoteUpdate) (Note, error) {
@@ -448,14 +449,23 @@ type Reading struct {
 	UpdatedAt  string   `json:"updated_at"`
 	FinishedAt *string  `json:"finished_at"`
 
-	tagsRaw string
+	Highlights json.RawMessage `json:"highlights"` // [{quote, note?, at}]
+
+	tagsRaw       string
+	highlightsRaw string
 }
 
-const readingCols = `id,title,author,url,status,rating,notes,tags,created_at,updated_at,finished_at`
+const readingCols = `id,title,author,url,status,rating,notes,tags,highlights,created_at,updated_at,finished_at`
 
 func readingScan(rd *Reading, tagsRaw *string) []interface{} {
 	return []interface{}{&rd.ID, &rd.Title, &rd.Author, &rd.URL, &rd.Status, &rd.Rating,
-		&rd.Notes, tagsRaw, &rd.CreatedAt, &rd.UpdatedAt, &rd.FinishedAt}
+		&rd.Notes, tagsRaw, &rd.highlightsRaw, &rd.CreatedAt, &rd.UpdatedAt, &rd.FinishedAt}
+}
+
+// hydrateReading converts raw scans into exported JSON fields.
+func hydrateReading(rd *Reading) {
+	rd.Tags = splitTags(rd.tagsRaw)
+	rd.Highlights = json.RawMessage(defaultJSON([]byte(rd.highlightsRaw)))
 }
 
 var readingStatuses = map[string]bool{"to-read": true, "reading": true, "done": true}
@@ -508,9 +518,9 @@ func (k *Knowledge) CreateReading(title string, author, url *string, status stri
 		finV = *finished
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO reading_list (`+readingCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO reading_list (`+readingCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		rd.ID, rd.Title, authorV, urlV, rd.Status, ratingV, rd.Notes,
-		joinTags(rd.Tags), rd.CreatedAt, rd.UpdatedAt, finV); err != nil {
+		joinTags(rd.Tags), defaultJSON(rd.Highlights), rd.CreatedAt, rd.UpdatedAt, finV); err != nil {
 		return Reading{}, err
 	}
 	if err := mirrorReading(tx, rd); err != nil {
@@ -526,6 +536,7 @@ func mirrorReading(db dbtx, rd Reading) error {
 	return mirrorItem(db, "reading", rd.ID, rd.Title, rd.Notes, rd.Tags, map[string]interface{}{
 		"author": rd.Author, "url": rd.URL, "status": rd.Status,
 		"rating": rd.Rating, "finished_at": rd.FinishedAt,
+		"highlights": rd.Highlights,
 	})
 }
 
@@ -539,7 +550,7 @@ func (k *Knowledge) GetReading(id string) (Reading, error) {
 	if err != nil {
 		return Reading{}, err
 	}
-	rd.Tags = splitTags(rd.tagsRaw)
+	hydrateReading(&rd)
 	return rd, nil
 }
 
@@ -595,20 +606,21 @@ func (k *Knowledge) ListReadings(f ReadingFilter) ([]Reading, int, error) {
 		if err := rows.Scan(readingScan(&rd, &rd.tagsRaw)...); err != nil {
 			return nil, 0, err
 		}
-		rd.Tags = splitTags(rd.tagsRaw)
+		hydrateReading(&rd)
 		out = append(out, rd)
 	}
 	return out, total, rows.Err()
 }
 
 type ReadingUpdate struct {
-	Title  *string
-	Author **string
-	URL    **string
-	Status *string
-	Rating **int
-	Notes  *string
-	Tags   *[]string
+	Title      *string
+	Author     **string
+	URL        **string
+	Status     *string
+	Rating     **int
+	Notes      *string
+	Tags       *[]string
+	Highlights *json.RawMessage // replacement array of {quote, note?, at}
 }
 
 func (k *Knowledge) UpdateReading(id string, u ReadingUpdate) (Reading, error) {
@@ -646,6 +658,16 @@ func (k *Knowledge) UpdateReading(id string, u ReadingUpdate) (Reading, error) {
 	if u.Notes != nil {
 		cur.Notes = *u.Notes
 	}
+	if u.Highlights != nil {
+		hl := strings.TrimSpace(string(*u.Highlights))
+		if hl != "" && (!json.Valid([]byte(hl)) || !strings.HasPrefix(hl, "[")) {
+			return Reading{}, ErrInvalid
+		}
+		if hl == "" {
+			hl = "[]"
+		}
+		cur.Highlights = json.RawMessage(hl)
+	}
 	if u.Tags != nil {
 		cur.Tags = normalizeTagList(*u.Tags)
 	}
@@ -678,8 +700,8 @@ func (k *Knowledge) UpdateReading(id string, u ReadingUpdate) (Reading, error) {
 		finV = *cur.FinishedAt
 	}
 	if _, err := tx.Exec(
-		`UPDATE reading_list SET title=?, author=?, url=?, status=?, rating=?, notes=?, tags=?, updated_at=?, finished_at=? WHERE id=?`,
-		cur.Title, authorV, urlV, cur.Status, ratingV, cur.Notes, joinTags(cur.Tags), cur.UpdatedAt, finV, id); err != nil {
+		`UPDATE reading_list SET title=?, author=?, url=?, status=?, rating=?, notes=?, tags=?, highlights=?, updated_at=?, finished_at=? WHERE id=?`,
+		cur.Title, authorV, urlV, cur.Status, ratingV, cur.Notes, joinTags(cur.Tags), defaultJSON(cur.Highlights), cur.UpdatedAt, finV, id); err != nil {
 		return Reading{}, err
 	}
 	if err := mirrorReading(tx, cur); err != nil {

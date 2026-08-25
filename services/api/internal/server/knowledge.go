@@ -1,6 +1,7 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -327,13 +328,14 @@ func (s *Server) handleGetReading(w http.ResponseWriter, r *http.Request) {
 }
 
 type readingPatch struct {
-	Title  *string  `json:"title"`
-	Author **string `json:"author"`
-	URL    **string `json:"url"`
-	Status *string  `json:"status"`
-	Rating **int    `json:"rating"`
-	Notes  *string  `json:"notes"`
-	Tags   *[]string `json:"tags"`
+	Title      *string          `json:"title"`
+	Author     **string         `json:"author"`
+	URL        **string         `json:"url"`
+	Status     *string          `json:"status"`
+	Rating     **int            `json:"rating"`
+	Notes      *string          `json:"notes"`
+	Tags       *[]string        `json:"tags"`
+	Highlights *json.RawMessage `json:"highlights"`
 }
 
 func (s *Server) handleUpdateReading(w http.ResponseWriter, r *http.Request) {
@@ -344,7 +346,7 @@ func (s *Server) handleUpdateReading(w http.ResponseWriter, r *http.Request) {
 	}
 	rd, err := s.knowledge.UpdateReading(chiURLParam(r, "id"), store.ReadingUpdate{
 		Title: req.Title, Author: req.Author, URL: req.URL, Status: req.Status,
-		Rating: req.Rating, Notes: req.Notes, Tags: req.Tags,
+		Rating: req.Rating, Notes: req.Notes, Tags: req.Tags, Highlights: req.Highlights,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
@@ -574,7 +576,7 @@ func (s *Server) handlePromoteItem(w http.ResponseWriter, r *http.Request) {
 			}
 			return
 		}
-		t, err := s.planner.CreateTask(item.Title, item.Body, "", "med", nil, nil, item.Tags)
+		t, err := s.planner.CreateTask(item.Title, item.Body, "", "med", nil, nil, item.Tags, nil)
 		if err != nil {
 			if !mapStoreErr(w, err) {
 				fail(w, http.StatusInternalServerError, err.Error())

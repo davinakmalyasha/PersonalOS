@@ -19,6 +19,7 @@ type Transaction struct {
 	CategoryID     *string `json:"category_id"`
 	CategoryName   *string `json:"category_name,omitempty"`
 	Notes          string  `json:"notes"`
+	IsTransfer     bool    `json:"is_transfer"`
 	CreatedAt      string  `json:"created_at"`
 }
 
@@ -64,18 +65,22 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 	if isUniqueErr(err) {
 		return Transaction{}, ErrConflict // duplicate natural key (date, amount, hash)
 	}
-	return t, err
+	if err != nil {
+		return Transaction{}, err
+	}
+	f.pairDetectFor(t.ID)
+	return f.GetTransaction(t.ID)
 }
 
 func txnScan(dest *Transaction) []interface{} {
 	return []interface{}{&dest.ID, &dest.AccountID, &dest.AmountMinor, &dest.Currency,
 		&dest.Date, &dest.Merchant, &dest.RawDescription, &dest.CategoryID,
-		&dest.CategoryName, &dest.Notes, &dest.CreatedAt}
+		&dest.CategoryName, &dest.Notes, &dest.IsTransfer, &dest.CreatedAt}
 }
 
 const txnSelect = `
 	SELECT t.id,t.account_id,t.amount,t.currency,t.date,t.merchant,t.raw_description,
-	       t.category_id,c.name,t.notes,t.created_at
+	       t.category_id,c.name,t.notes,t.is_transfer,t.created_at
 	FROM transactions t LEFT JOIN categories c ON c.id=t.category_id`
 
 func (f *Finance) GetTransaction(id string) (Transaction, error) {
@@ -261,20 +266,32 @@ func (f *Finance) ImportTransactions(accountID, currency string, drafts []financ
 	defer stmt.Close()
 
 	var inserted int64
+	var newIDs []string
 	created := NowRFC3339()
 	for _, d := range drafts {
 		var cat interface{}
 		if d.CategoryID != "" {
 			cat = d.CategoryID
 		}
-		res, err := stmt.Exec(NewID(), accountID, d.Amount, currency, d.Date, d.Merchant, d.RawDesc, cat, d.Hash, created)
+		id := NewID()
+		res, err := stmt.Exec(id, accountID, d.Amount, currency, d.Date, d.Merchant, d.RawDesc, cat, d.Hash, created)
 		if err != nil {
 			return inserted, err
 		}
 		n, _ := res.RowsAffected()
 		inserted += n
+		if n > 0 {
+			newIDs = append(newIDs, id)
+		}
 	}
-	return inserted, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return inserted, err
+	}
+	// Transfer pairing after commit (best-effort).
+	for _, id := range newIDs {
+		f.pairDetectFor(id)
+	}
+	return inserted, nil
 }
 
 func firstN(s string, n int) string {

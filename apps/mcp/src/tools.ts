@@ -1,4 +1,4 @@
-import { z } from "zod";
+﻿import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PersonalOSClient } from "./api.js";
 
@@ -35,7 +35,7 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
   server.tool(
     "save_item",
     "Save ANY personal data into universal capture (searchable immediately). " +
-      "Use for warranties, receipts, ideas, contacts — anything without a dedicated tool.",
+      "Use for warranties, receipts, ideas, contacts â€” anything without a dedicated tool.",
     {
       type: z.string().describe("open vocabulary slug, e.g. warranty|idea|receipt|contact|misc"),
       title: z.string().describe("short title (max 300 chars)"),
@@ -151,7 +151,7 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   server.tool(
     "spending_summary",
-    "Month totals + per-category spend + budget-vs-spent. THE tool for 'how much did I spend…'.",
+    "Month totals + per-category spend + budget-vs-spent. THE tool for 'how much did I spendâ€¦'.",
     {
       month: str().describe("YYYY-MM"),
       group_by: z.enum(["month", "category"]).optional(),
@@ -467,7 +467,7 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   server.tool(
     "health_summary",
-    "Window rollup: workout count/minutes, meal count/calories, weight first→latest change, grocery counts. Defaults to the last 30 days.",
+    "Window rollup: workout count/minutes, meal count/calories, weight firstâ†’latest change, grocery counts. Defaults to the last 30 days.",
     { from: optStr().describe("YYYY-MM-DD"), to: optStr().describe("YYYY-MM-DD") },
     async (a: ToolArgs) => {
       const to =
@@ -509,5 +509,78 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
           return run(() => api.get("/v1/grocery"));
       }
     },
+  );
+
+// ---------- Phase 9: agentic depth ----------
+
+  server.tool(
+    "manage_goals",
+    "Savings goals (kind=savings, target_minor + saved_minor + deadline) and the single daily-calorie goal (kind=calorie, target_minor = kcal). action=list|create|update|add|delete.",
+    {
+      action: z.enum(["list", "create", "update", "add", "delete"]),
+      kind: z.enum(["savings", "calorie"]).optional(),
+      id: optStr(),
+      name: optStr(),
+      target_minor: z.number().int().optional(),
+      saved_minor: z.number().int().optional(),
+      deadline: optStr().describe("YYYY-MM-DD"),
+      amount_minor: z.number().int().optional().describe("add: delta applied to saved_minor"),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "list":
+          return run(() => api.get("/v1/goals", { kind: a.kind }));
+        case "create":
+          return run(() =>
+            api.post("/v1/goals", {
+              kind: a.kind,
+              name: a.name,
+              target_minor: a.target_minor ?? null,
+              deadline: a.deadline ?? null,
+            }),
+          );
+        case "update":
+          return run(() =>
+            api.patch(`/v1/goals/${a.id}`, {
+              name: a.name,
+              target_minor: a.target_minor,
+              saved_minor: a.saved_minor,
+              deadline: a.deadline,
+            }),
+          );
+        case "add":
+          return run(() => api.post(`/v1/goals/${a.id}/add`, { amount_minor: a.amount_minor }));
+        default:
+          return run(() => api.del(`/v1/goals/${a.id}`));
+      }
+    },
+  );
+
+  server.tool(
+    "find_recurring",
+    "Detect subscriptions: same merchant + amount recurring ~monthly. Great for 'what am I subscribed to?'",
+    {},
+    async () => run(() => api.get("/v1/finance/recurring")),
+  );
+
+  server.tool(
+    "log_water",
+    "Add milliliters to today's water intake.",
+    { ml: z.number().int().min(1).max(10000), day: optStr().describe("YYYY-MM-DD, default today") },
+    async (a: ToolArgs) => run(() => api.post("/v1/body-metrics/water", a)),
+  );
+
+  server.tool(
+    "exercise_prs",
+    "Personal records: heaviest set per exercise (from workout logs).",
+    { from: optStr().describe("YYYY-MM-DD"), to: optStr().describe("YYYY-MM-DD") },
+    async (a: ToolArgs) => run(() => api.get("/v1/health/prs", a)),
+  );
+
+  server.tool(
+    "upcoming_expiries",
+    "Items with a date-like data field (expires/due/…) inside the next N days — warranties, renewals.",
+    { days: intOpt().describe("default 30") },
+    async (a: ToolArgs) => run(() => api.get("/v1/items/expiring", { days: a.days })),
   );
 }

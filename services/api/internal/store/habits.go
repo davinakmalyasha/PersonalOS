@@ -17,6 +17,7 @@ type Habit struct {
 	Description   string  `json:"description"`
 	Cadence       string  `json:"cadence"`
 	TargetPerWeek int     `json:"target_per_week"`
+	Weekdays      string  `json:"weekdays"` // Mon-first schedule mask, e.g. 1110100
 	Color         *string `json:"color"`
 	CreatedAt     string  `json:"created_at"`
 	ArchivedAt    *string `json:"archived_at"`
@@ -31,13 +32,34 @@ type HabitUpdate struct {
 	Description   *string
 	Cadence       *string
 	TargetPerWeek *int
+	Weekdays      *string
 	Color         **string
 	Archived      *bool
 }
 
 func validCadence(c string) bool { return c == "daily" || c == "weekly" }
 
-func (p *Planner) CreateHabit(name, description, cadence string, targetPerWeek int, color *string) (Habit, error) {
+func validWeekdays(w string) bool {
+	if len(w) != 7 {
+		return false
+	}
+	for _, c := range w {
+		if c != '0' && c != '1' {
+			return false
+		}
+	}
+	return true
+}
+
+// weekdaysOf returns the habit's schedule mask, defaulting for unset/legacy rows.
+func weekdaysOf(h *Habit) string {
+	if len(h.Weekdays) == 7 {
+		return h.Weekdays
+	}
+	return "1111111"
+}
+
+func (p *Planner) CreateHabit(name, description, cadence string, targetPerWeek int, weekdays *string, color *string) (Habit, error) {
 	if cadence == "" {
 		cadence = "daily"
 	}
@@ -50,9 +72,16 @@ func (p *Planner) CreateHabit(name, description, cadence string, targetPerWeek i
 	if targetPerWeek < 1 || targetPerWeek > 7 {
 		return Habit{}, ErrInvalid
 	}
+	wd := "1111111"
+	if weekdays != nil && *weekdays != "" {
+		if !validWeekdays(*weekdays) {
+			return Habit{}, ErrInvalid
+		}
+		wd = *weekdays
+	}
 	h := Habit{
 		ID: NewID(), Name: name, Description: description, Cadence: cadence,
-		TargetPerWeek: targetPerWeek, Color: color, CreatedAt: NowRFC3339(),
+		TargetPerWeek: targetPerWeek, Weekdays: wd, Color: color, CreatedAt: NowRFC3339(),
 	}
 	var col interface{}
 	if color != nil && *color != "" {
@@ -61,20 +90,20 @@ func (p *Planner) CreateHabit(name, description, cadence string, targetPerWeek i
 		h.Color = nil
 	}
 	_, err := p.DB.Exec(`
-		INSERT INTO habits (id,name,description,cadence,target_per_week,color,created_at)
-		VALUES (?,?,?,?,?,?,?)`,
-		h.ID, h.Name, h.Description, h.Cadence, h.TargetPerWeek, col, h.CreatedAt)
+		INSERT INTO habits (id,name,description,cadence,target_per_week,weekdays,color,created_at)
+		VALUES (?,?,?,?,?,?,?,?)`,
+		h.ID, h.Name, h.Description, h.Cadence, h.TargetPerWeek, h.Weekdays, col, h.CreatedAt)
 	if err != nil {
 		return Habit{}, err
 	}
 	return h, nil
 }
 
-const habitCols = `id,name,description,cadence,target_per_week,color,created_at,archived_at`
+const habitCols = `id,name,description,cadence,target_per_week,weekdays,color,created_at,archived_at`
 
 func habitScan(h *Habit) []interface{} {
 	return []interface{}{&h.ID, &h.Name, &h.Description, &h.Cadence,
-		&h.TargetPerWeek, &h.Color, &h.CreatedAt, &h.ArchivedAt}
+		&h.TargetPerWeek, &h.Weekdays, &h.Color, &h.CreatedAt, &h.ArchivedAt}
 }
 
 func (p *Planner) GetHabit(id string) (Habit, error) {
@@ -123,6 +152,7 @@ func (p *Planner) attachStreaks(h *Habit, today time.Time) {
 	}
 	h.Dates = dates
 	h.Streaks = planner.ComputeStreaks(dates, h.Cadence, h.TargetPerWeek, today)
+	h.Streaks.Consistency30 = planner.Consistency30(dates, weekdaysOf(h), today)
 }
 
 func (p *Planner) allCheckoffDates(habitID string) ([]string, error) {
@@ -167,13 +197,19 @@ func (p *Planner) UpdateHabit(id string, u HabitUpdate) (Habit, error) {
 		}
 		cur.TargetPerWeek = *u.TargetPerWeek
 	} else if cadenceChanged && cur.Cadence == "weekly" && cur.TargetPerWeek == 7 {
-		cur.TargetPerWeek = 3 // sensible default when flipping daily→weekly
+		cur.TargetPerWeek = 3 // sensible default when flipping dailyâ†’weekly
 	}
 	if cur.Cadence == "daily" {
 		cur.TargetPerWeek = 7
 	}
+	if u.Weekdays != nil {
+		if !validWeekdays(*u.Weekdays) {
+			return Habit{}, ErrInvalid
+		}
+		cur.Weekdays = *u.Weekdays
+	}
 	if u.Color != nil {
-		cur.Color = *u.Color // double pointer: nil means "not sent"; *nil clears? no — see handler
+		cur.Color = *u.Color // double pointer: nil means "not sent"; ptr-to-nil clears
 	}
 	if u.Archived != nil {
 		if *u.Archived {
@@ -192,9 +228,9 @@ func (p *Planner) UpdateHabit(id string, u HabitUpdate) (Habit, error) {
 		archived = *cur.ArchivedAt
 	}
 	_, err = p.DB.Exec(`
-		UPDATE habits SET name=?, description=?, cadence=?, target_per_week=?, color=?, archived_at=?
+		UPDATE habits SET name=?, description=?, cadence=?, target_per_week=?, weekdays=?, color=?, archived_at=?
 		WHERE id=?`,
-		cur.Name, cur.Description, cur.Cadence, cur.TargetPerWeek, col, archived, id)
+		cur.Name, cur.Description, cur.Cadence, cur.TargetPerWeek, cur.Weekdays, col, archived, id)
 	if err != nil {
 		return Habit{}, err
 	}
@@ -213,7 +249,7 @@ func (p *Planner) DeleteHabit(id string) error {
 }
 
 // ToggleCheckoff inserts the (habit,date) row when missing and removes it when
-// present — one call is always idempotent-safe to repeat in either state.
+// present â€” one call is always idempotent-safe to repeat in either state.
 // Returns whether the habit is checked after the toggle.
 func (p *Planner) ToggleCheckoff(habitID, date string) (bool, error) {
 	if _, err := p.getHabitRaw(habitID); err != nil {
@@ -227,15 +263,15 @@ func (p *Planner) ToggleCheckoff(habitID, date string) (bool, error) {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
-		return true, nil // inserted → now done
+		return true, nil // inserted â†’ now done
 	}
-	// Already existed → remove it.
+	// Already existed â†’ remove it.
 	res, err = p.DB.Exec(`DELETE FROM habit_checkoffs WHERE habit_id=? AND date=?`, habitID, date)
 	if err != nil {
 		return false, err
 	}
 	n, _ := res.RowsAffected()
-	return n == 0, nil // nothing deleted (concurrent re-insert?) → still done
+	return n == 0, nil // nothing deleted (concurrent re-insert?) â†’ still done
 }
 
 // SetCheckoff forces a state instead of toggling; used by tests/tools that
@@ -297,7 +333,7 @@ func (p *Planner) CheckoffsBetween(habitID, from, to string) ([]string, error) {
 	return out, rows.Err()
 }
 
-// CheckoffsForDate maps habit_id → checked for one calendar day.
+// CheckoffsForDate maps habit_id â†’ checked for one calendar day.
 func (p *Planner) CheckoffsForDate(date string) (map[string]bool, error) {
 	rows, err := p.DB.Query(`SELECT habit_id FROM habit_checkoffs WHERE date=?`, date)
 	if err != nil {

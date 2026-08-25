@@ -135,6 +135,20 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** every translation layer is a bug surface; LLMs read snake_case schemas fine; 1:1 mapping means openapi.json remains the single source of truth for both REST and MCP shapes.
 - **Consequence:** if the API renames a field, the MCP schema changes with it — acceptable at this scale; a generator could be adopted later.
 
+## ADR-0020 — Live board: poll-diff over SSE/WebSocket
+
+- **Date:** 2026-08-25
+- **Decision:** the dashboard detects agent writes by polling `GET /v1/activity` (cheap per-pillar `MAX(timestamp)` union) every 4s — paused when the tab is hidden — and re-fetching a pillar's real data only when its timestamp moved. No SSE/WebSocket layer.
+- **Why:** single local user, local API; polling costs ~one indexed query per 4s and keeps the Go API free of connection-state machinery. The activity endpoint also gives the "agent just wrote X seconds ago" affordance and per-pillar change versions that drive tile flash animations.
+- **Consequence:** multi-client remote deployments could justify SSE later; the activity contract (`pillars{}`, `latest`) is SSE-shaped already, so the client swap is contained in `lib/use-activity.tsx`.
+
+## ADR-0021 — Board expansion: overlay card, not FLIP grid surgery
+
+- **Date:** 2026-08-25
+- **Decision:** expanding a bento tile renders it as a fixed overlay card (scale+fade in, backdrop dim) while siblings get `.board-dimmed` (scale 0.97 + opacity 0.25). Not a FLIP-animated in-grid expansion.
+- **Why:** FLIP across a responsive CSS grid with mixed spans is fragile; the overlay reads as "grows out of the board" at a fraction of the complexity, and detail content (tables, charts) gets stable sizing.
+- **Consequence:** expansion state is URL-driven (`?expand=<tile>`) + event-driven (`personal-os:focus` CustomEvent), so host apps and agents can drive it without touching internal state.
+
 ---
 
 Template for the next ADR:

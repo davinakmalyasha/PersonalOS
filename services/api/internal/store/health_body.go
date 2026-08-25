@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"time"
 )
 
 // ---- Workouts ----
@@ -203,7 +204,7 @@ func (h *Health) DeleteWorkout(id string) error {
 // ---- Body metrics ----
 
 // UpsertBodyMetric inserts or REPLACES the row for the same calendar day
-// (unique index on substr(measured_at,1,10)) Ã¢â‚¬â€ the day's latest measurement
+// (unique index on substr(measured_at,1,10)) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the day's latest measurement
 // wins. Returns the stored row.
 func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float64, notes string) (BodyMetric, error) {
 	if !validRFC3339(measuredAt) {
@@ -360,6 +361,10 @@ type HealthSummary struct {
 	Meals    MealsRollup    `json:"meals"`
 	Weight   WeightRollup   `json:"weight"`
 	Grocery  GroceryRollup  `json:"grocery"`
+
+	CalorieGoal   *int64 `json:"calorie_goal,omitempty"`
+	CaloriesToday *int64 `json:"calories_today,omitempty"`
+	WaterTodayMl  *int64 `json:"water_today_ml,omitempty"`
 }
 
 type WorkoutsRollup struct {
@@ -452,6 +457,34 @@ func (h *Health) Summary(from, to string) (HealthSummary, error) {
 	gq := `SELECT COUNT(*), COALESCE(SUM(checked),0) FROM grocery_items`
 	if err := h.DB.QueryRow(gq).Scan(&s.Grocery.Total, &s.Grocery.Checked); err != nil {
 		return s, err
+	}
+
+	// Calorie goal (single 'calorie' goal row) + today's consumed.
+	var target sql.NullInt64
+	if err := h.DB.QueryRow(`SELECT target_minor FROM goals WHERE kind='calorie' LIMIT 1`).Scan(&target); err == nil && target.Valid {
+		v := target.Int64
+		s.CalorieGoal = &v
+		var consumed sql.NullInt64
+		today := time.Now().UTC().Format("2006-01-02")
+		_ = h.DB.QueryRow(
+			`SELECT SUM(calories) FROM meals WHERE substr(eaten_at,1,10)=?`, today).Scan(&consumed)
+		if consumed.Valid {
+			c := consumed.Int64
+			s.CaloriesToday = &c
+		} else {
+			z := int64(0)
+			s.CaloriesToday = &z
+		}
+	}
+
+	// Water today.
+	var water sql.NullInt64
+	today := time.Now().UTC().Format("2006-01-02")
+	_ = h.DB.QueryRow(
+		`SELECT water_ml FROM body_metrics WHERE substr(measured_at,1,10)=?`, today).Scan(&water)
+	if water.Valid {
+		w := water.Int64
+		s.WaterTodayMl = &w
 	}
 	return s, nil
 }

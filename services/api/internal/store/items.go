@@ -4,7 +4,9 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/domain/knowledge"
 )
@@ -494,4 +496,74 @@ func mirrorItem(db dbtx, typ, nativeID, title, body string, tags []string, data 
 func unmirrorItem(db dbtx, typ, nativeID string) error {
 	_, err := db.Exec(`DELETE FROM items WHERE type=? AND source_item_id=?`, typ, nativeID)
 	return err
+}
+
+// defaultJSON normalizes an empty RawMessage to the given default literal.
+func defaultJSON(v json.RawMessage) string {
+	if len(strings.TrimSpace(string(v))) == 0 {
+		return "[]"
+	}
+	return string(v)
+}
+
+// ---- Expiry surfacing ----
+
+type ExpiringItem struct {
+	Item
+	DateKey  string `json:"date_key"` // which data field carried the date
+	Date     string `json:"date"`     // YYYY-MM-DD
+	DaysLeft int    `json:"days_left"`
+}
+
+// expiryKeys are data-JSON keys scanned for upcoming dates.
+var expiryKeys = []string{"expires", "expires_at", "expiry", "due", "due_date", "until", "warranty_end", "end_date", "valid_until"}
+
+// ExpiringItems scans recent items for date-like data fields within the next
+// `days` (or already expired within a 30d grace). Personal-scale scan.
+func (it *Items) ExpiringItems(days int) ([]ExpiringItem, error) {
+	if days < 1 || days > 365 {
+		days = 30
+	}
+	rows, err := it.DB.Query(
+		`SELECT ` + itemCols + ` FROM items ORDER BY created_at DESC LIMIT 500`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	today := time.Now().UTC()
+	out := []ExpiringItem{}
+	for rows.Next() {
+		var i Item
+		if err := rows.Scan(itemScan(&i, &i.tagsRaw)...); err != nil {
+			return nil, err
+		}
+		i.hydrate()
+		var data map[string]interface{}
+		if err := json.Unmarshal([]byte(i.Data), &data); err != nil {
+			continue
+		}
+		for _, key := range expiryKeys {
+			raw, ok := data[key]
+			if !ok {
+				continue
+			}
+			s, _ := raw.(string)
+			if s == "" {
+				continue
+			}
+			d, perr := time.Parse("2006-01-02", strings.TrimSpace(s))
+			if perr != nil {
+				continue
+			}
+			daysLeft := int(d.Sub(today).Hours() / 24)
+			if daysLeft > days || daysLeft < -30 {
+				continue
+			}
+			out = append(out, ExpiringItem{Item: i, DateKey: key, Date: d.Format("2006-01-02"), DaysLeft: daysLeft})
+			break
+		}
+	}
+	sort.Slice(out, func(a, b int) bool { return out[a].Date < out[b].Date })
+	return out, rows.Err()
 }

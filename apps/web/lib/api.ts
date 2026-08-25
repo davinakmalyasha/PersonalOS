@@ -253,6 +253,9 @@ export type HealthSummary = {
     measured_on: string | null;
   };
   grocery: { total: number; checked: number };
+  calorie_goal?: number | null;
+  calories_today?: number | null;
+  water_today_ml?: number | null;
 };
 
 export function formatMinor(minor: number, currency = "IDR"): string {

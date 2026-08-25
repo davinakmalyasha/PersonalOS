@@ -167,13 +167,49 @@ func TestStreaksWeeklyLongestRun(t *testing.T) {
 }
 
 func TestHabitDueToday(t *testing.T) {
-	if !HabitDueToday("daily", 7, 0) {
-		t.Fatal("daily habit always due")
+	today := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC) // Tuesday
+	all := "1111111"
+	weekdays := "1010100" // Mon, Wed, Fri
+	if !HabitDueToday("daily", 7, 0, all, today) {
+		t.Fatal("daily habit due on scheduled day")
 	}
-	if HabitDueToday("weekly", 3, 3) {
+	if HabitDueToday("daily", 7, 0, weekdays, today) {
+		t.Fatal("daily habit NOT due on unscheduled Tuesday (1010100)")
+	}
+	if !HabitDueToday("daily", 7, 2, weekdays, time.Date(2026, 8, 26, 0, 0, 0, 0, time.UTC)) {
+		t.Fatal("daily habit due on scheduled Wednesday even when week target met")
+	}
+	if HabitDueToday("weekly", 3, 3, all, today) {
 		t.Fatal("weekly habit with target met should not be due")
 	}
-	if !HabitDueToday("weekly", 3, 2) {
+	if !HabitDueToday("weekly", 3, 2, all, today) {
 		t.Fatal("weekly habit below target should be due")
+	}
+}
+
+func TestConsistency30(t *testing.T) {
+	today := time.Date(2026, 8, 25, 0, 0, 0, 0, time.UTC)
+
+	// 15 checkoffs over trailing 30 days, all days scheduled → 50%.
+	var dates []string
+	for i := 0; i < 30; i += 2 {
+		dates = append(dates, today.AddDate(0, 0, -i).Format("2006-01-02"))
+	}
+	if got := Consistency30(dates, "1111111", today); got != 50 {
+		t.Fatalf("consistency = %d, want 50", got)
+	}
+
+	// Empty history → 0.
+	if got := Consistency30(nil, "1111111", today); got != 0 {
+		t.Fatalf("empty consistency = %d, want 0", got)
+	}
+
+	// Perfect: 30 consecutive days → 100%.
+	var full []string
+	for i := 0; i < 30; i++ {
+		full = append(full, today.AddDate(0, 0, -i).Format("2006-01-02"))
+	}
+	if got := Consistency30(full, "1111111", today); got != 100 {
+		t.Fatalf("perfect consistency = %d, want 100", got)
 	}
 }

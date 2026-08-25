@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.6.0",
-    "description": "Local-first personal platform. Phase 8: live board (activity pulse) — all pillars + universal capture + MCP remain live."
+    "version": "0.7.0",
+    "description": "Local-first personal platform. Phase 9: agentic depth — goals, subscription detection, transfer pairing, recurring tasks, habit schedules + rolling consistency, water intake, exercise PRs, reading highlights, expiry surfacing, live activity pulse."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
@@ -467,6 +467,72 @@
             }
           }
         }
+      }
+    },
+    "/v1/goals": {
+      "get": {
+        "operationId": "listGoals",
+        "summary": "Goals (kind=savings|calorie; calorie is single-row upsert)",
+        "parameters": [{ "name": "kind", "in": "query", "schema": { "type": "string", "enum": ["savings", "calorie"] } }],
+        "responses": { "200": { "description": "Goal[]" } }
+      },
+      "post": {
+        "operationId": "createGoal",
+        "summary": "Create goal. savings: {name, target_minor, deadline?}. calorie: {name, target_minor=kcal} replaces the previous.",
+        "responses": { "201": { "description": "created" }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/goals/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getGoal", "summary": "Get goal", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateGoal", "summary": "Update name/target/saved/deadline", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteGoal", "summary": "Delete goal", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/goals/{id}/add": {
+      "post": {
+        "operationId": "addToGoal",
+        "summary": "Increment saved_minor by {amount_minor} (negative allowed, floors at 0)",
+        "responses": { "200": { "description": "updated goal" } }
+      }
+    },
+    "/v1/finance/recurring": {
+      "get": {
+        "operationId": "findRecurring",
+        "summary": "Subscription detection: same merchant+amount, >=3 occurrences, ~monthly cadence",
+        "responses": { "200": { "description": "[{merchant, amount_minor, occurrences, first_date, last_date, next_guess}]" } }
+      }
+    },
+    "/v1/finance/transfers/detect": {
+      "post": {
+        "operationId": "detectTransfers",
+        "summary": "Flag same-day opposite-amount cross-account pairs as transfers (excluded from spend summaries)",
+        "responses": { "200": { "description": "{paired: n}" } }
+      }
+    },
+    "/v1/body-metrics/water": {
+      "post": {
+        "operationId": "logWater",
+        "summary": "Add {ml} to the day's water total (day defaults to today; row auto-created)",
+        "responses": { "200": { "description": "{water_ml: total}" }, "400": { "description": "bad ml/day" } }
+      }
+    },
+    "/v1/health/prs": {
+      "get": {
+        "operationId": "exercisePRs",
+        "summary": "Heaviest set per exercise name within window (from workouts JSON)",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "ExercisePR[]" } }
+      }
+    },
+    "/v1/items/expiring": {
+      "get": {
+        "operationId": "expiringItems",
+        "summary": "Items whose data JSON carries a date-like field (expires/due/…) within N days",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 30, "maximum": 365 } }],
+        "responses": { "200": { "description": "ExpiringItem[]" } }
       }
     },
     "/openapi.json": {

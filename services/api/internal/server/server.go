@@ -76,6 +76,7 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 		if s.activity != nil {
 			r.Get("/activity", s.handleActivity)
 		}
+		s.mountExtras(r)
 	})
 
 	return r

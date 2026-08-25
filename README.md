@@ -2,7 +2,9 @@
 
 Local-first personal platform — one SQLite backbone, a Go API, a Next.js dashboard, and an MCP server so **any agent** can read/write your life data on your machine.
 
-> Status: **v1 feature-complete** — all four pillars + universal capture + MCP layer live. See `docs/roadmap.md`.
+> **Integration note:** this repo is a component package, not a website. `apps/web` is only a reference host — `apps/web/components/*` are the pull-and-embed units (all API-driven, monochrome, dark/light). The MCP server is the primary interface for agents; a live bento board at `/` reacts to agent writes within seconds (poll-diff via `/v1/activity` — see ADR-0020).
+
+> Status: **v1.1** — all pillars + universal capture + MCP (38 tools) + live board + agentic depth. See `docs/roadmap.md`.
 
 ## Pillars
 

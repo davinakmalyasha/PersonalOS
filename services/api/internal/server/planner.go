@@ -1,4 +1,4 @@
-package server
+﻿package server
 
 import (
 	"errors"
@@ -49,13 +49,14 @@ func (s *Server) requirePlanner(w http.ResponseWriter) (*store.Planner, bool) {
 // ---- Tasks ----
 
 type taskReq struct {
-	Title    string   `json:"title"`
-	Notes    string   `json:"notes"`
-	Status   string   `json:"status"`
-	Priority string   `json:"priority"`
-	DueDate  *string  `json:"due_date"`
-	Project  *string  `json:"project"`
-	Tags     []string `json:"tags"`
+	Title          string   `json:"title"`
+	Notes          string   `json:"notes"`
+	Status         string   `json:"status"`
+	Priority       string   `json:"priority"`
+	DueDate        *string  `json:"due_date"`
+	Project        *string  `json:"project"`
+	RecurrenceRule *string  `json:"recurrence_rule"`
+	Tags           []string `json:"tags"`
 }
 
 var taskStatuses = map[string]bool{"todo": true, "doing": true, "done": true}
@@ -90,7 +91,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid task", details...)
 		return
 	}
-	t, err := p.CreateTask(req.Title, req.Notes, req.Status, req.Priority, req.DueDate, req.Project, req.Tags)
+	t, err := p.CreateTask(req.Title, req.Notes, req.Status, req.Priority, req.DueDate, req.Project, req.Tags, req.RecurrenceRule)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -160,13 +161,14 @@ func (s *Server) handleGetTask(w http.ResponseWriter, r *http.Request) {
 }
 
 type taskPatch struct {
-	Title    *string   `json:"title"`
-	Notes    *string   `json:"notes"`
-	Status   *string   `json:"status"`
-	Priority *string   `json:"priority"`
-	DueDate  *string   `json:"due_date"`
-	Project  **string  `json:"project"`
-	Tags     *[]string `json:"tags"`
+	Title          *string   `json:"title"`
+	Notes          *string   `json:"notes"`
+	Status         *string   `json:"status"`
+	Priority       *string   `json:"priority"`
+	DueDate        *string   `json:"due_date"`
+	Project        **string  `json:"project"`
+	RecurrenceRule **string  `json:"recurrence_rule"`
+	Tags           *[]string `json:"tags"`
 }
 
 func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +202,9 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	if req.Project != nil {
 		u.Project = *req.Project
 	}
+	if req.RecurrenceRule != nil {
+		u.RecurrenceRule = *req.RecurrenceRule
+	}
 	t, err := p.UpdateTask(chiURLParam(r, "id"), u)
 	if err != nil {
 		if !mapStoreErr(w, err) {
@@ -231,6 +236,7 @@ type habitReq struct {
 	Description   string  `json:"description"`
 	Cadence       string  `json:"cadence"`
 	TargetPerWeek *int    `json:"target_per_week"`
+	Weekdays      *string `json:"weekdays"`
 	Color         *string `json:"color"`
 }
 
@@ -261,7 +267,7 @@ func (s *Server) handleCreateHabit(w http.ResponseWriter, r *http.Request) {
 	if req.TargetPerWeek != nil {
 		target = *req.TargetPerWeek
 	}
-	h, err := p.CreateHabit(req.Name, req.Description, req.Cadence, target, req.Color)
+	h, err := p.CreateHabit(req.Name, req.Description, req.Cadence, target, req.Weekdays, req.Color)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -305,6 +311,7 @@ type habitPatch struct {
 	Description   *string  `json:"description"`
 	Cadence       *string  `json:"cadence"`
 	TargetPerWeek *int     `json:"target_per_week"`
+	Weekdays      *string  `json:"weekdays"`
 	Color         **string `json:"color"`
 	Archived      *bool    `json:"archived"`
 }
@@ -329,7 +336,8 @@ func (s *Server) handleUpdateHabit(w http.ResponseWriter, r *http.Request) {
 	}
 	h, err := p.UpdateHabit(chiURLParam(r, "id"), store.HabitUpdate{
 		Name: req.Name, Description: req.Description, Cadence: req.Cadence,
-		TargetPerWeek: req.TargetPerWeek, Color: req.Color, Archived: req.Archived,
+		TargetPerWeek: req.TargetPerWeek, Weekdays: req.Weekdays,
+		Color: req.Color, Archived: req.Archived,
 	})
 	if err != nil {
 		if !mapStoreErr(w, err) {

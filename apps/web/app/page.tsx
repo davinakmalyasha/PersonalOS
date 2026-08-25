@@ -142,6 +142,40 @@ function MoneyPreview({ s }: { s: MonthSummary | null }) {
       <Metric label="Out" value={`−${((s?.outcome_minor ?? 0) / 100).toLocaleString("id-ID")}`} />
       <Metric label="Net" value={`${((s?.net_minor ?? 0) / 100).toLocaleString("id-ID")}`} strong />
       <Metric label="Top cat" value={top?.name ?? "—"} sub={top ? `${(top.spent_minor / 100).toLocaleString("id-ID")}` : undefined} />
+      <div className="col-span-2">
+        <GoalsStrip />
+      </div>
+    </div>
+  );
+}
+
+function GoalsStrip() {
+  const goals = useTileData<{ items: { id: string; name: string; kind: string; target_minor: number | null; saved_minor: number }[] }>(
+    "/v1/goals?kind=savings",
+    "finance",
+  );
+  const subs = useTileData<{ items: unknown[] }>("/v1/finance/recurring", "finance");
+  const items = (goals?.items ?? []).slice(0, 2);
+  if (items.length === 0 && (subs?.items ?? []).length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1 border-t pt-2">
+      {items.map((g) => {
+        const pct = g.target_minor ? Math.min(100, Math.round((g.saved_minor / g.target_minor) * 100)) : 0;
+        return (
+          <div key={g.id} className="flex items-center gap-2 text-xs">
+            <span className="w-24 truncate">{g.name}</span>
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-muted">
+              <div className="h-full rounded-full bg-foreground" style={{ width: `${pct}%` }} />
+            </div>
+            <span className="font-mono tabular-nums text-muted-foreground">{pct}%</span>
+          </div>
+        );
+      })}
+      {(subs?.items ?? []).length > 0 && (
+        <p className="text-[10px] text-muted-foreground">
+          {(subs?.items ?? []).length} recurring subscription{(subs?.items ?? []).length === 1 ? "" : "s"} detected
+        </p>
+      )}
     </div>
   );
 }
@@ -172,6 +206,8 @@ function MoneyDetail({ month }: { month: string }) {
 
 function BodyPreview({ s }: { s: HealthSummary | null }) {
   const change = s?.weight.change_kg;
+  const goal = s?.calorie_goal;
+  const eaten = s?.calories_today;
   return (
     <div className="grid grid-cols-2 gap-3">
       <Metric
@@ -181,8 +217,15 @@ function BodyPreview({ s }: { s: HealthSummary | null }) {
         strong
       />
       <Metric label="Workouts 14d" value={String(s?.workouts.count ?? 0)} sub={`${s?.workouts.total_minutes ?? 0} min`} />
-      <Metric label="Meals 14d" value={String(s?.meals.count ?? 0)} />
-      <Metric label="Calories" value={s?.meals.calories_total != null ? s.meals.calories_total.toLocaleString("id-ID") : "—"} />
+      <Metric
+        label="Calories today"
+        value={eaten != null ? eaten.toLocaleString("id-ID") : "—"}
+        sub={goal != null ? `of ${goal.toLocaleString("id-ID")} goal` : undefined}
+      />
+      <Metric
+        label="Water today"
+        value={s?.water_today_ml != null ? `${(s.water_today_ml / 1000).toFixed(2)}L` : "—"}
+      />
     </div>
   );
 }
@@ -286,13 +329,21 @@ function UpcomingDetail({ data }: { data: { items: { date: string; tasks: Task[]
   );
 }
 
-function CapturesPreview({ items }: { items: KnowledgeItem[] | null }) {
+function CapturesPreview({ items, expiring }: { items: KnowledgeItem[] | null; expiring: { title: string; date: string; days_left: number }[] | null }) {
+  const exp = expiring ?? [];
   return (
     <div className="space-y-0.5">
-      {(items ?? []).slice(0, 5).map((i) => (
+      {(items ?? []).slice(0, 4).map((i) => (
         <Row key={i.id} left={i.title} right={i.type} dim />
       ))}
       {(items ?? []).length === 0 && <p className="text-xs text-muted-foreground">Nothing captured yet.</p>}
+      {exp.length > 0 && (
+        <div className="mt-2 space-y-0.5 border-t pt-2">
+          {exp.slice(0, 3).map((e, i) => (
+            <Row key={i} left={`${e.title} · ${e.date}`} right={`${e.days_left}d`} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -389,6 +440,10 @@ function Board() {
     "health",
   );
   const captures = useTileData<{ items: KnowledgeItem[] }>("/v1/search?page_size=5", "universal");
+  const expiring = useTileData<{ items: { title: string; date: string; days_left: number }[] }>(
+    "/v1/items/expiring?days=30",
+    "universal",
+  );
   const grocery = useTileData<{ items: GroceryItem[] }>("/v1/grocery", "health");
 
   const versionByPillar: Record<string, string> = {
@@ -404,7 +459,7 @@ function Board() {
     money: <MoneyPreview s={money} />,
     body: <BodyPreview s={health} />,
     upcoming: <UpcomingPreview data={upcoming} />,
-    captures: <CapturesPreview items={captures?.items ?? null} />,
+    captures: <CapturesPreview items={captures?.items ?? null} expiring={expiring?.items ?? null} />,
     grocery: <GroceryPreview items={grocery?.items ?? null} />,
   };
 

@@ -59,7 +59,7 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 	err = f.DB.QueryRow(`
 		SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0),
 		       COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0)
-		FROM transactions WHERE date>=? AND date<?`, start, end).
+		FROM transactions WHERE date>=? AND date<? AND is_transfer=0`, start, end).
 		Scan(&s.Income, &s.Outcome)
 	if err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 	rows, err := f.DB.Query(`
 		SELECT t.category_id, c.name, SUM(-t.amount) AS spent
 		FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
-		WHERE t.date>=? AND t.date<? AND t.amount<0
+		WHERE t.date>=? AND t.date<? AND t.amount<0 AND t.is_transfer=0
 		GROUP BY t.category_id ORDER BY spent DESC`, start, end)
 	if err != nil {
 		return nil, err
@@ -143,7 +143,7 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 	}
 	for _, b := range budgetRows {
 		var spent int64
-		_ = f.DB.QueryRow(`SELECT COALESCE(SUM(-amount),0) FROM transactions WHERE category_id=? AND date>=? AND date<?`,
+		_ = f.DB.QueryRow(`SELECT COALESCE(SUM(-amount),0) FROM transactions WHERE category_id=? AND date>=? AND date<? AND is_transfer=0`,
 			b.CategoryID, start, end).Scan(&spent)
 		s.BudgetLines = append(s.BudgetLines, BudgetLine{
 			CategoryID: b.CategoryID, CategoryName: b.Category,
@@ -164,7 +164,7 @@ func (f *Finance) SpendingSeries(groupBy, from, to string) ([]SpendingPoint, err
 	case "", "month":
 		rows, err := f.DB.Query(`
 			SELECT substr(date,1,7) AS m, SUM(-amount)
-			FROM transactions WHERE amount<0 AND date>=? AND date<=?
+			FROM transactions WHERE amount<0 AND date>=? AND date<=? AND is_transfer=0
 			GROUP BY m ORDER BY m`, from, toEnd(from, to))
 		if err != nil {
 			return nil, err
@@ -183,7 +183,7 @@ func (f *Finance) SpendingSeries(groupBy, from, to string) ([]SpendingPoint, err
 		rows, err := f.DB.Query(`
 			SELECT COALESCE(c.name,'Uncategorized') AS name, SUM(-t.amount)
 			FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
-			WHERE t.amount<0 AND t.date>=? AND t.date<=?
+			WHERE t.amount<0 AND t.date>=? AND t.date<=? AND t.is_transfer=0
 			GROUP BY t.category_id, c.name ORDER BY 2 DESC`, from, toEnd(from, to))
 		if err != nil {
 			return nil, err

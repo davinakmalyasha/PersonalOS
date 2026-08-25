@@ -102,9 +102,35 @@
 
 ---
 
+## Phase 8 — Live Board ✅ DONE
+
+**Concept:** the dashboard is a component package, not a website. `apps/web` is the reference host; `components/*` are the pull-and-embed units.
+
+**Ships:** `GET /v1/activity` (per-pillar latest-change timestamps); `ActivityProvider` polling every 4s (paused on hidden tab); neutral top-bar shell with **◉ live dot**; `/` rewritten as a **bento board** — preview tiles, click → tile grows into a full detail card while siblings dim/scale behind (stacked-cards); `?expand=<tile>` deep-links + `personal-os:focus` CustomEvents let host apps/agents drive expansion; activity writes flash the touched pillar's tile. Landing page deleted.
+
+**Accepts:** activity timestamps move on writes; board tiles re-fetch only when their pillar's version changes; expansion/collapse animates smoothly; zero marketing residue.
+
+---
+
+## Phase 9 — Agentic Depth ✅ DONE
+
+**Features (reference-grounded: Monarch/Rocket Money, Habitify/Loop, MFP/Hevy, Omnivore/Readwise):**
+
+- Finance: `goals` (savings w/ progress + single calorie target), `/finance/recurring` subscription detection, transfer pairing (same-day opposite cross-account → `is_transfer`, excluded from spend summaries)
+- Planner: recurring tasks (RRULE-lite on tasks; completing spawns the next instance, UNTIL-respected), habit weekday schedules (`weekdays` Mon-first mask, due-logic respects it), rolling 30-day consistency % alongside streaks
+- Health: water intake (daily ml on the body-metrics row + quick log), exercise PRs (heaviest set per exercise), calories-today vs calorie goal in summary
+- Knowledge: reading highlights (`[{quote, note?, at}]`)
+- Universal: `/items/expiring` scans data-JSON date fields for upcoming warranties/renewals
+
+**MCP:** `manage_goals`, `find_recurring`, `log_water`, `exercise_prs`, `upcoming_expiries` added (38 tools total).
+
+**Accepts:** recurring heuristic detects 3× monthly Netflix; transfer pair nets zero in summary; completing a weekly recurring task spawns due+7d; weekday mask suppresses unscheduled days; PRs reflect heaviest set; expiry scan finds warranty inside horizon.
+
+---
+
 ## Versioning
 
-`v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. Tag releases with conventional changelog.
+`v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).
 
 ## Risk mitigations
 

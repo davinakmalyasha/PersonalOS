@@ -13,6 +13,45 @@ type Streaks struct {
 	DoneToday     bool `json:"done_today"`
 	WeekDone      int  `json:"week_done"` // checkoffs in the current ISO week
 	TargetPerWeek int  `json:"target_per_week"`
+	Consistency30 int  `json:"consistency_30"` // % of scheduled days checked, trailing 30d
+}
+
+// scheduledDaysInWindow counts how many of the last `window` days (inclusive
+// of today) are scheduled per the weekdays bitmask ("1111111", Mon-first).
+func scheduledDaysInWindow(weekdays string, today time.Time, window int) int {
+	if len(weekdays) != 7 {
+		weekdays = "1111111"
+	}
+	n := 0
+	for i := 0; i < window; i++ {
+		d := today.AddDate(0, 0, -i)
+		wd := int(d.Weekday()+6) % 7 // Mon=0..Sun=6
+		if weekdays[wd] == '1' {
+			n++
+		}
+	}
+	return n
+}
+
+// Consistency30 computes the trailing-30-day consistency percentage against
+// the habit's weekday schedule. Daily habits with default mask = checked/30.
+func Consistency30(dates []string, weekdays string, today time.Time) int {
+	sched := scheduledDaysInWindow(weekdays, today, 30)
+	if sched == 0 {
+		return 0
+	}
+	set := make(map[string]struct{}, len(dates))
+	for _, d := range normalizeDates(dates) {
+		set[d] = struct{}{}
+	}
+	done := 0
+	for i := 0; i < 30; i++ {
+		day := today.AddDate(0, 0, -i).Format(dateLayout)
+		if _, ok := set[day]; ok {
+			done++
+		}
+	}
+	return done * 100 / sched
 }
 
 // ComputeStreaks calculates current + longest streak and weekly progress from
@@ -136,9 +175,15 @@ func ComputeStreaks(dates []string, cadence string, targetPerWeek int, today tim
 	return s
 }
 
-// HabitDueToday: daily habits are always due; weekly habits are due while the
-// current week's count is below target.
-func HabitDueToday(cadence string, targetPerWeek, weekDone int) bool {
+// HabitDueToday: daily habits are due on their scheduled weekdays; weekly
+// habits are due while the current week's count is below target.
+func HabitDueToday(cadence string, targetPerWeek, weekDone int, weekdays string, today time.Time) bool {
+	if len(weekdays) == 7 {
+		wd := int(today.Weekday()+6) % 7 // Mon=0..Sun=6
+		if weekdays[wd] != '1' {
+			return false
+		}
+	}
 	if cadence == "weekly" {
 		return weekDone < targetPerWeek
 	}

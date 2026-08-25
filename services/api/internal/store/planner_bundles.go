@@ -72,7 +72,7 @@ func (p *Planner) Today(now time.Time) (TodayBundle, error) {
 	for _, h := range habits {
 		b.Habits = append(b.Habits, HabitWithStatus{
 			Habit:     h,
-			DueToday:  planner.HabitDueToday(h.Cadence, h.TargetPerWeek, h.Streaks.WeekDone),
+			DueToday:  planner.HabitDueToday(h.Cadence, h.TargetPerWeek, h.Streaks.WeekDone, weekdaysOf(&h), now),
 			DoneToday: doneMap[h.ID],
 		})
 	}
@@ -152,7 +152,7 @@ func (p *Planner) Overview(date string, now time.Time) (DayBundle, error) {
 	for _, h := range habits {
 		b.Habits = append(b.Habits, HabitWithStatus{
 			Habit:     h,
-			DueToday:  planner.HabitDueToday(h.Cadence, h.TargetPerWeek, h.Streaks.WeekDone),
+			DueToday:  planner.HabitDueToday(h.Cadence, h.TargetPerWeek, h.Streaks.WeekDone, weekdaysOf(&h), now),
 			DoneToday: doneMap[h.ID],
 		})
 	}
