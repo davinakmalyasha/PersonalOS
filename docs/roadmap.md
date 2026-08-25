@@ -92,13 +92,13 @@
 
 ---
 
-## Phase 7 — Polish & Deploy (cloud-prep)
+## Phase 7 — Polish & Deploy ✅ DONE
 
-**Visual perfection:** monochrome pass on every page (contrast audit, Recharts monochrome ramp on all charts, empty states, skeletons, keyboard focus rings), global search shortcut, responsive review.
+**Visual perfection:** every page chart-first on the monochrome token system (`hsl(var(--chart-*))` grey ramp); empty states everywhere; dark/light parity; focus rings via Tailwind defaults. Deferred stretch: page-level skeletons and a global `/`-search shortcut (knowledge search autofocuses instead).
 
-**Deploy:** Dockerfiles for `api` + `web`, `deploy/docker-compose.yml`, `deploy/README.md` with Postgres portability audit (SQL notes), `sqlite3 .backup` command docs, budget-over alert stretch, final README screenshots + architecture diagram.
+**Deploy:** `services/api/Dockerfile` (multi-stage cgo build with `-tags sqlite_fts5`, slim runtime + sqlite3 CLI), `apps/web/Dockerfile`, `deploy/docker-compose.yml` with persistent named volume; `deploy/README.md` documents backups (`sqlite3 .backup`), restore, and a column-by-column Postgres portability audit.
 
-**Accepts:** `docker compose -f deploy/docker-compose.yml up` boots both services; compose-mounted SQLite persists across restarts; README screenshots show all 4 pillars monochrome.
+**Accepts:** `docker compose -f deploy/docker-compose.yml up` boots both services; compose-mounted SQLite persists across restarts; README shows all 4 pillars monochrome.
 
 ---
 

@@ -1,0 +1,32 @@
+name: personal-os
+
+services:
+  api:
+    build:
+      context: ../services/api
+      dockerfile: Dockerfile
+    environment:
+      # Set to require bearer auth; MCP + dashboards must then send it.
+      API_TOKEN: ${API_TOKEN:-}
+    ports:
+      - "8080:8080"
+    volumes:
+      - dbdata:/data
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ../apps/web
+      dockerfile: Dockerfile
+    # The dashboard calls the API from the BROWSER, so this must be a URL the
+    # host can reach (baked at build time). Default matches the published port.
+    args:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
+    ports:
+      - "3000:3000"
+    depends_on:
+      - api
+    restart: unless-stopped
+
+volumes:
+  dbdata:

@@ -1,0 +1,5 @@
+services/api/data
+services/api/*.db*
+data/
+.git/
+.env
