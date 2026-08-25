@@ -1,0 +1,53 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Personal OS API",
+    "version": "0.1.0",
+    "description": "Local-first personal platform — Go owns the DB. See docs/api-outline.md for the full endpoint plan. This spec grows per phase; Phase 1 exposes health + spec."
+  },
+  "servers": [
+    { "url": "http://localhost:8080", "description": "local dev" }
+  ],
+  "paths": {
+    "/healthz": {
+      "get": {
+        "operationId": "healthz",
+        "summary": "Liveness + DB ping",
+        "responses": {
+          "200": {
+            "description": "ok",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["status", "db"],
+                  "properties": {
+                    "status": { "type": "string", "example": "ok" },
+                    "db": { "type": "string", "example": "ok" }
+                  }
+                }
+              }
+            }
+          },
+          "503": { "description": "db unavailable" }
+        }
+      }
+    },
+    "/openapi.json": {
+      "get": {
+        "operationId": "getOpenAPI",
+        "summary": "Canonical OpenAPI spec",
+        "responses": {
+          "200": {
+            "description": "spec",
+            "content": {
+              "application/json": {
+                "schema": { "type": "object" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
