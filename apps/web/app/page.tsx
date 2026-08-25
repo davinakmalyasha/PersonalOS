@@ -22,9 +22,9 @@ const pillars = [
   {
     title: "Knowledge",
     desc: "Notes + bookmarks + reading list. FTS5, tags, links, global search.",
-    status: "Phase 4",
+    status: "LIVE",
     href: "/knowledge",
-    live: false,
+    live: true,
   },
   {
     title: "Health",

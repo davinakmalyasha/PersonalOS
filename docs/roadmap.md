@@ -54,7 +54,7 @@
 
 ---
 
-## Phase 4 — Knowledge (Notes + Bookmarks + Reading)
+## Phase 4 — Knowledge (Notes + Bookmarks + Reading) ✅ DONE
 
 **Schema:** `notes`, `bookmarks` (URL normalized, deduped), `reading_list`; mirrored rows to `items` for unified FTS.
 

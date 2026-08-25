@@ -160,6 +160,48 @@ export function todayStr(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+// ---- Knowledge + universal capture ----
+
+export type KnowledgeItem = {
+  id: string;
+  type: string;
+  title: string;
+  body: string;
+  data: string; // JSON object string
+  tags: string[];
+  source: "manual" | "api" | "mcp" | "import" | "promotion";
+  source_item_id: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type TagCount = { tag: string; count: number };
+
+export type ReadingEntry = {
+  id: string;
+  title: string;
+  author: string | null;
+  url: string | null;
+  status: "to-read" | "reading" | "done";
+  rating: number | null;
+  notes: string;
+  tags: string[];
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+};
+
+export type LinkPair = {
+  from_id?: string;
+  to_id?: string;
+  kind: string;
+  to_type?: string;
+  to_title?: string;
+  from_type?: string;
+  from_title?: string;
+  created_at: string;
+};
+
 export function formatMinor(minor: number, currency = "IDR"): string {
   const major = minor / 100;
   try {

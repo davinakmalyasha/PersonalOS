@@ -114,6 +114,20 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** grace prevents the demotivating "streak reset every morning" artifact while staying honest; weekly targets map to real habit science (X times per week).
 - **Consequence:** streak math lives pure in `domain/planner` (unit-tested); store attaches it on habit reads.
 
+## ADR-0017 — Knowledge mirrors to items transactionally; FTS5 needs `sqlite_fts5` tag
+
+- **Date:** 2026-08-25
+- **Decision:** (a) every note/bookmark/reading write upserts a projection row in `items` inside the same SQL transaction, located by `(type, source_item_id)`; deletes remove the mirror. Search endpoints return `source_item_id` so clients resolve back to native records. (b) `mattn/go-sqlite3` must be built with `-tags sqlite_fts5` for FTS5; all Go commands (build/vet/test) and CI use it. (c) SQLite triggers need `-- +goose StatementBegin/End` wrappers in migrations.
+- **Why:** mirroring keeps `GET /search`, tags, and item_links trivial across pillars without FK gymnastics; the build-tag requirement is invisible until first FTS migration otherwise — documenting + wiring it into CI prevents a broken cold start. StatementBegin/End is goose's official mechanism for semicolon-bearing trigger bodies.
+- **Consequence:** mirror drift is impossible by construction (same tx); per-pillar search can later bypass items if needed. Contributors must not drop the tag from local commands.
+
+## ADR-0018 — Bookmark URL canonicalization rules
+
+- **Date:** 2026-08-25
+- **Decision:** normalize to: lowercase scheme+host, strip default ports, drop fragments, remove tracking params (`utm_*`, fbclid, gclid, dclid, msclkid, mc_cid, mc_eid, igshid, si), sort surviving query keys deterministically, trim trailing `/` (root `/` vanishes). Path case and query values preserved. Only http/https accepted. Duplicate canonical URL on create returns the existing row with HTTP 200 (`duplicate:true`).
+- **Why:** deterministic one-form canonicalization is what makes UNIQUE(url) idempotence real; stripping campaign noise matches how people actually re-save pages.
+- **Consequence:** exotic equivalences (e.g. percent-encoding variants) are NOT unified in v1; revisit only if real dupes appear.
+
 ---
 
 Template for the next ADR:

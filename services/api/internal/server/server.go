@@ -20,10 +20,12 @@ var openapiSpec []byte
 
 // Server holds dependencies for all handlers.
 type Server struct {
-	db      *sql.DB
-	logger  zerolog.Logger
-	finance *store.Finance
-	planner *store.Planner
+	db        *sql.DB
+	logger    zerolog.Logger
+	finance   *store.Finance
+	planner   *store.Planner
+	knowledge *store.Knowledge
+	items     *store.Items
 }
 
 func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
@@ -31,6 +33,8 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 	if sqlDB != nil {
 		s.finance = &store.Finance{DB: sqlDB}
 		s.planner = &store.Planner{DB: sqlDB}
+		s.knowledge = &store.Knowledge{DB: sqlDB}
+		s.items = &store.Items{DB: sqlDB}
 	}
 
 	r := chi.NewRouter()
@@ -55,6 +59,12 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 		}
 		if s.planner != nil {
 			s.mountPlanner(r)
+		}
+		if s.knowledge != nil {
+			s.mountKnowledge(r)
+		}
+		if s.items != nil {
+			s.mountItems(r)
 		}
 	})
 

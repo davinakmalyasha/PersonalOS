@@ -2,8 +2,8 @@
   "openapi": "3.1.0",
   "info": {
     "title": "Personal OS API",
-    "version": "0.3.0",
-    "description": "Local-first personal platform. Phase 3: Planner module live (tasks, habits + checkoffs with streaks, events with RRULE-lite recurrence, today/upcoming/overview bundles) alongside Phase 2 Finance."
+    "version": "0.4.0",
+    "description": "Local-first personal platform. Phase 4: Knowledge module live (notes, bookmarks with URL dedupe, reading list; universal items core + FTS5 unified search, tags, links, promote). Finance + Planner remain live."
   },
   "servers": [
     { "url": "http://localhost:8080", "description": "local dev" }
@@ -241,6 +241,83 @@
             }
           },
           "events": { "type": "array", "items": { "$ref": "#/components/schemas/Occurrence" } }
+        }
+      },
+      "Note": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "body": { "type": "string", "description": "Markdown" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "pinned": { "type": "boolean" },
+          "archived_at": { "type": ["string", "null"] },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "Bookmark": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "url": { "type": "string", "description": "normalized canonical URL (lowercase host, tracking params stripped)" },
+          "title": { "type": "string" },
+          "description": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "ReadingEntry": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "author": { "type": ["string", "null"] },
+          "url": { "type": ["string", "null"] },
+          "status": { "type": "string", "enum": ["to-read", "reading", "done"] },
+          "rating": { "type": ["integer", "null"], "minimum": 1, "maximum": 5 },
+          "notes": { "type": "string" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" },
+          "finished_at": { "type": ["string", "null"] }
+        }
+      },
+      "Item": {
+        "type": "object",
+        "description": "Universal capture row; note/bookmark/reading rows mirror here with source_item_id set.",
+        "properties": {
+          "id": { "type": "string" },
+          "type": { "type": "string", "description": "open vocab: note|bookmark|reading|warranty|…" },
+          "title": { "type": "string" },
+          "body": { "type": "string" },
+          "data": { "type": "string", "description": "JSON object" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "source": { "type": "string", "enum": ["manual", "api", "mcp", "import", "promotion"] },
+          "source_item_id": { "type": ["string", "null"], "description": "native record id when mirrored from a pillar table" },
+          "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "Link": {
+        "type": "object",
+        "properties": {
+          "from_id": { "type": "string" },
+          "to_id": { "type": "string" },
+          "kind": { "type": "string", "default": "related" },
+          "to_type": { "type": "string" },
+          "to_title": { "type": "string" },
+          "from_type": { "type": "string" },
+          "from_title": { "type": "string" },
+          "created_at": { "type": "string" }
+        }
+      },
+      "TagCount": {
+        "type": "object",
+        "properties": {
+          "tag": { "type": "string" },
+          "count": { "type": "integer" }
         }
       }
     }
@@ -686,6 +763,274 @@
         "summary": "Unified daily bundle: tasks on date + habits state + occurrences",
         "parameters": [{ "name": "date", "in": "query", "schema": { "type": "string", "format": "date", "description": "default: today UTC" } }],
         "responses": { "200": { "description": "day bundle" }, "400": { "description": "bad date" } }
+      }
+    },
+    "/v1/notes": {
+      "get": {
+        "operationId": "listNotes",
+        "summary": "List notes (pinned first, then newest)",
+        "parameters": [
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "pinned", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "archived", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged list of Note" } }
+      },
+      "post": {
+        "operationId": "createNote",
+        "summary": "Create note (mirrors to items for unified FTS)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "body": { "type": "string" },
+                  "tags": { "type": "array", "items": { "type": "string" } },
+                  "pinned": { "type": "boolean", "default": false }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Note" } } } } }
+      }
+    },
+    "/v1/notes/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getNote", "summary": "Get note", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": {
+        "operationId": "updateNote",
+        "summary": "Update note ({archived:true|false} sets/clears archived_at)",
+        "responses": { "200": { "description": "ok" } }
+      },
+      "delete": { "operationId": "deleteNote", "summary": "Delete note + mirror", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/bookmarks": {
+      "get": {
+        "operationId": "listBookmarks",
+        "summary": "List bookmarks",
+        "parameters": [
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged list of Bookmark" } }
+      },
+      "post": {
+        "operationId": "createBookmark",
+        "summary": "Create bookmark; URL normalized (lowercase host, utm_*/fbclid/gclid stripped). Duplicate canonical URL returns 200 with existing row.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["url"],
+                "properties": {
+                  "url": { "type": "string" },
+                  "title": { "type": "string", "description": "defaults to host when empty" },
+                  "description": { "type": "string" },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" }, "200": { "description": "duplicate — existing bookmark returned" }, "400": { "description": "invalid URL" } }
+      }
+    },
+    "/v1/bookmarks/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getBookmark", "summary": "Get bookmark", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateBookmark", "summary": "Update title/description/tags", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteBookmark", "summary": "Delete bookmark + mirror", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/reading": {
+      "get": {
+        "operationId": "listReadings",
+        "summary": "Reading list",
+        "parameters": [
+          { "name": "status", "in": "query", "schema": { "type": "string", "enum": ["to-read", "reading", "done"] } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged list of ReadingEntry" }, "400": { "description": "bad status filter" } }
+      },
+      "post": {
+        "operationId": "createReading",
+        "summary": "Create reading entry",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["title"],
+                "properties": {
+                  "title": { "type": "string" },
+                  "author": { "type": ["string", "null"] },
+                  "url": { "type": ["string", "null"] },
+                  "status": { "type": "string", "enum": ["to-read", "reading", "done"], "default": "to-read" },
+                  "rating": { "type": ["integer", "null"], "minimum": 1, "maximum": 5 },
+                  "notes": { "type": "string" },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created" }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/reading/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getReading", "summary": "Get reading entry", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": {
+        "operationId": "updateReading",
+        "summary": "Update entry; status=done stamps finished_at, leaving done clears it. rating 1..5 or null.",
+        "responses": { "200": { "description": "ok" }, "400": { "description": "validation error" } }
+      },
+      "delete": { "operationId": "deleteReading", "summary": "Delete entry + mirror", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/knowledge/search": {
+      "get": {
+        "operationId": "knowledgeSearch",
+        "summary": "Cross-type FTS over notes + bookmarks + reading mirrors (bm25-ranked; porter stemming)",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "empty → recent captures" },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "ranked Item results (use source_item_id to resolve native records)" } }
+      }
+    },
+    "/v1/knowledge/tags": {
+      "get": {
+        "operationId": "knowledgeTags",
+        "summary": "Distinct tags with counts across knowledge types",
+        "parameters": [
+          { "name": "prefix", "in": "query", "schema": { "type": "string" }, "description": "autocomplete prefix" },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100 } }
+        ],
+        "responses": { "200": { "description": "TagCount[]" } }
+      }
+    },
+    "/v1/items": {
+      "get": {
+        "operationId": "listItems",
+        "summary": "List universal capture items (?type=&tag=&q=&page=&page_size=)",
+        "parameters": [
+          { "name": "type", "in": "query", "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "q", "in": "query", "schema": { "type": "string" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page_size", "in": "query", "schema": { "type": "integer", "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "paged Item list" } }
+      },
+      "post": {
+        "operationId": "createItem",
+        "summary": "Save any random personal data: type + title + body + data JSON + tags — searchable day-one",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["type", "title"],
+                "properties": {
+                  "type": { "type": "string", "example": "warranty" },
+                  "title": { "type": "string", "maxLength": 300 },
+                  "body": { "type": "string" },
+                  "data": { "type": "string", "description": "JSON object string" },
+                  "tags": { "type": "array", "items": { "type": "string" } }
+                }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "created", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Item" } } } }, "400": { "description": "validation error" } }
+      }
+    },
+    "/v1/items/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getItem", "summary": "Get item", "responses": { "200": { "description": "ok" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateItem", "summary": "Update title/body/data/tags", "responses": { "200": { "description": "ok" } } },
+      "delete": { "operationId": "deleteItem", "summary": "Hard delete item (+ its links)", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/items/{id}/links": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "createItemLink",
+        "summary": "Link item → item ({to_id, kind}; ids are items.id)",
+        "responses": { "201": { "description": "created" }, "400": { "description": "self link / bad body" }, "404": { "description": "endpoint item missing" } }
+      },
+      "get": {
+        "operationId": "listItemLinks",
+        "summary": "Links in both directions with peer titles resolved",
+        "responses": { "200": { "description": "{outgoing:[Link], incoming:[Link]}" } }
+      }
+    },
+    "/v1/items/{id}/links/{toId}/{kind}": {
+      "parameters": [
+        { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "toId", "in": "path", "required": true, "schema": { "type": "string" } },
+        { "name": "kind", "in": "path", "required": true, "schema": { "type": "string" } }
+      ],
+      "delete": { "operationId": "deleteItemLink", "summary": "Remove one directed link", "responses": { "204": { "description": "deleted" }, "404": { "description": "missing" } } }
+    },
+    "/v1/items/{id}/promote": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "promoteItem",
+        "summary": "Promote universal item to a typed pillar record (non-destructive; original stays)",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["target"],
+                "properties": { "target": { "type": "string", "enum": ["task", "note"] } }
+              }
+            }
+          }
+        },
+        "responses": { "201": { "description": "{target, record_id, item}" }, "400": { "description": "unsupported target" } }
+      }
+    },
+    "/v1/search": {
+      "get": {
+        "operationId": "globalSearch",
+        "summary": "Global FTS across ALL items (universal + mirrored pillars), bm25-ranked",
+        "parameters": [
+          { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "empty → recent items" },
+          { "name": "type", "in": "query", "schema": { "type": "string" } },
+          { "name": "tag", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
+        ],
+        "responses": { "200": { "description": "ranked Item[]" } }
+      }
+    },
+    "/v1/tags": {
+      "get": {
+        "operationId": "itemTags",
+        "summary": "Distinct tags with counts across all items",
+        "parameters": [
+          { "name": "prefix", "in": "query", "schema": { "type": "string" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 100 } }
+        ],
+        "responses": { "200": { "description": "TagCount[]" } }
       }
     }
   }

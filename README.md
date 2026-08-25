@@ -2,16 +2,16 @@
 
 Local-first personal platform — one SQLite backbone, a Go API, a Next.js dashboard, and MCP tooling so **any agent** can read/write your life data on your machine.
 
-> Status: Phase 3 (Planner) live — Finance + Planner pillars, docs complete. See `docs/roadmap.md`.
+> Status: Phase 4 (Knowledge) live — Finance, Planner, Knowledge pillars + universal capture core. See `docs/roadmap.md`.
 
 ## Pillars
 
 | Pillar | What lives there |
 |---|---|
 | **Finance** | accounts, transactions, categories/rules, budgets. CSV import + dedupe |
-| **Planner** | tasks + habits (streaks, checkoffs) + calendar events (RRULE-lite) — LIVE |
-| **Knowledge** | notes + bookmarks + reading list — FTS5, tags, links |
-| **Health** | food (meals/recipes/grocery) + fitness (workouts/body metrics) |
+| **Planner** | tasks + habits (streaks) + calendar events (RRULE-lite) — LIVE |
+| **Knowledge** | notes + bookmarks + reading — FTS5 search-first, tags, links — LIVE |
+| **Health** | meals + recipes + grocery, workouts + body metrics |
 | **Universal Capture** | `items` core for any random personal data; agent-native, promotable |
 
 Every pillar is **REST + MCP writable** — `Go owns the database`, TS never touches SQLite directly.
@@ -34,9 +34,11 @@ npm run dev
 # → http://localhost:3000
 
 # 4. Tests / lint
-cd services/api && go test ./... && go vet ./...
+cd services/api && go test -tags sqlite_fts5 ./... && go vet -tags sqlite_fts5 ./...
 cd apps/web && npm run lint && npx tsc --noEmit
 ```
+
+> The `sqlite_fts5` build tag is **required** — FTS5 is compiled into mattn/go-sqlite3 only when it's set.
 
 ## Monorepo layout
 
