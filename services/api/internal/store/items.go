@@ -34,17 +34,19 @@ type Item struct {
 	Tags         []string `json:"tags"`
 	Source       string   `json:"source"`
 	SourceItemID *string  `json:"source_item_id"` // native record id when mirrored
+	Pinned       bool     `json:"pinned"`
+	Archived     bool     `json:"archived"`
 	CreatedAt    string   `json:"created_at"`
 	UpdatedAt    string   `json:"updated_at"`
 
 	tagsRaw string
 }
 
-const itemCols = `id,type,title,body,data,tags,source,source_item_id,created_at,updated_at`
+const itemCols = `id,type,title,body,data,tags,source,source_item_id,pinned,archived,created_at,updated_at`
 
 func itemScan(i *Item, tagsRaw *string) []interface{} {
 	return []interface{}{&i.ID, &i.Type, &i.Title, &i.Body, &i.Data,
-		tagsRaw, &i.Source, &i.SourceItemID, &i.CreatedAt, &i.UpdatedAt}
+		tagsRaw, &i.Source, &i.SourceItemID, &i.Pinned, &i.Archived, &i.CreatedAt, &i.UpdatedAt}
 }
 
 func (i *Item) hydrate() { i.Tags = splitTags(i.tagsRaw) }
@@ -95,12 +97,13 @@ func (it *Items) CreateItem(typ, title, body, data string, tags []string, source
 		item.SourceItemID = nil
 	}
 	_, err := it.DB.Exec(
-		`INSERT INTO items (`+itemCols+`) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+		`INSERT INTO items (`+itemCols+`) VALUES (?,?,?,?,?,?,?,?,0,0,?,?)`,
 		item.ID, item.Type, item.Title, item.Body, item.Data, joinTags(item.Tags),
 		item.Source, srcID, item.CreatedAt, item.UpdatedAt)
 	if err != nil {
 		return Item{}, err
 	}
+	logChange(it.DB, "item", item.ID, "create", item.Title)
 	return it.GetItem(item.ID)
 }
 
@@ -119,11 +122,13 @@ func (it *Items) GetItem(id string) (Item, error) {
 }
 
 type ItemFilter struct {
-	Type     string
-	Tag      string
-	Q        string // sanitized at call site or here
-	Page     int
-	PageSize int
+	Type            string
+	Tag             string
+	Q               string // sanitized at call site or here
+	Pinned          bool
+	IncludeArchived bool
+	Page            int
+	PageSize        int
 }
 
 func (it *Items) buildItemWhere(f ItemFilter) (string, []interface{}) {
@@ -137,6 +142,13 @@ func (it *Items) buildItemWhere(f ItemFilter) (string, []interface{}) {
 		where = append(where, "i.tags LIKE ?")
 		args = append(args, `%"`+f.Tag+`"%`)
 	}
+	if f.Pinned {
+		where = append(where, "i.pinned=1")
+	}
+	// Archived items are hidden unless explicitly requested via IncludeArchived.
+	if !f.IncludeArchived {
+		where = append(where, "i.archived=0")
+	}
 	return strings.Join(where, " AND "), args
 }
 
@@ -144,7 +156,7 @@ func (it *Items) buildItemWhere(f ItemFilter) (string, []interface{}) {
 // search instead of a plain scan.
 func (it *Items) ListItems(f ItemFilter) ([]Item, int, error) {
 	if f.Q != "" {
-		items, err := it.SearchItems(f.Q, nil, f.Type, f.Tag, 100)
+		items, err := it.SearchItems(f.Q, nil, f.Type, f.Tag, 100, f.IncludeArchived)
 		return items, len(items), err
 	}
 	if f.Page < 1 {
@@ -160,7 +172,7 @@ func (it *Items) ListItems(f ItemFilter) ([]Item, int, error) {
 		return nil, 0, err
 	}
 	q := `SELECT ` + prefixedCols("i") + ` FROM items i WHERE ` + whereSQL +
-		` ORDER BY i.created_at DESC LIMIT ? OFFSET ?`
+		` ORDER BY i.pinned DESC, i.created_at DESC LIMIT ? OFFSET ?`
 	pageArgs := append(append([]interface{}{}, args...), f.PageSize, (f.Page-1)*f.PageSize)
 	rows, err := it.DB.Query(q, pageArgs...)
 	if err != nil {
@@ -188,16 +200,21 @@ func prefixedCols(p string) string {
 }
 
 // SearchItems runs an FTS5 MATCH query over items_fts, optionally restricted
-// to types/tag, ranked by bm25. Unsearchable/empty input degrades to recent
-// items (created DESC).
-func (it *Items) SearchItems(q string, types []string, typ, tag string, limit int) ([]Item, error) {
+// to types/tag, ranked by bm25 (pinned first). Archived rows are hidden unless
+// includeArchived is set. Unsearchable/empty input degrades to recent items
+// (created DESC).
+func (it *Items) SearchItems(q string, types []string, typ, tag string, limit int, includeArchived bool) ([]Item, error) {
+	archiveWhere := "i.archived=0"
+	if includeArchived {
+		archiveWhere = "1=1"
+	}
 	if limit < 1 || limit > 100 {
 		limit = 20
 	}
 	match := knowledge.SanitizeFTSQuery(q)
 	if match == "" {
 		// Recent-captures fallback keeps the search-first UI useful pre-query.
-		where := []string{"1=1"}
+		where := []string{"1=1", archiveWhere}
 		args := []interface{}{}
 		if typ != "" {
 			where = append(where, "i.type=?")
@@ -211,12 +228,12 @@ func (it *Items) SearchItems(q string, types []string, typ, tag string, limit in
 			args = append(args, `%"`+tag+`"%`)
 		}
 		qry := `SELECT ` + prefixedCols("i") + ` FROM items i WHERE ` +
-			strings.Join(where, " AND ") + ` ORDER BY i.created_at DESC LIMIT ?`
+			strings.Join(where, " AND ") + ` ORDER BY i.pinned DESC, i.created_at DESC LIMIT ?`
 		args = append(args, limit)
 		return it.queryItems(qry, args...)
 	}
 
-	where := []string{"items_fts MATCH ?"}
+	where := []string{"items_fts MATCH ?", archiveWhere}
 	args := []interface{}{match}
 	if typ != "" {
 		where = append(where, "i.type=?")
@@ -232,12 +249,11 @@ func (it *Items) SearchItems(q string, types []string, typ, tag string, limit in
 	qry := `SELECT ` + prefixedCols("i") + `, bm25(items_fts) AS rank
 		FROM items_fts JOIN items i ON i.rowid = items_fts.rowid
 		WHERE ` + strings.Join(where, " AND ") + `
-		ORDER BY rank LIMIT ?`
+		ORDER BY i.pinned DESC, rank LIMIT ?`
 	args = append(args, limit)
 	return it.queryItemsRanked(qry, args...)
 }
-
-// queryItemsRanked scans the same 10 item columns plus a trailing bm25 rank.
+// queryItemsRanked scans the same 12 item columns plus a trailing bm25 rank.
 func (it *Items) queryItemsRanked(q string, args ...interface{}) ([]Item, error) {
 	rows, err := it.DB.Query(q, args...)
 	if err != nil {
@@ -293,10 +309,12 @@ func (it *Items) queryItems(q string, args ...interface{}) ([]Item, error) {
 }
 
 type ItemUpdate struct {
-	Title *string
-	Body  *string
-	Data  *string
-	Tags  *[]string
+	Title    *string
+	Body     *string
+	Data     *string
+	Tags     *[]string
+	Pinned   *bool
+	Archived *bool
 }
 
 func (it *Items) UpdateItem(id string, u ItemUpdate) (Item, error) {
@@ -319,17 +337,28 @@ func (it *Items) UpdateItem(id string, u ItemUpdate) (Item, error) {
 	if u.Tags != nil {
 		cur.Tags = normalizeTagList(*u.Tags)
 	}
+	if u.Pinned != nil {
+		cur.Pinned = *u.Pinned
+	}
+	if u.Archived != nil {
+		cur.Archived = *u.Archived
+	}
 	cur.UpdatedAt = NowRFC3339()
 	_, err = it.DB.Exec(
-		`UPDATE items SET title=?, body=?, data=?, tags=?, updated_at=? WHERE id=?`,
-		cur.Title, cur.Body, cur.Data, joinTags(cur.Tags), cur.UpdatedAt, id)
+		`UPDATE items SET title=?, body=?, data=?, tags=?, pinned=?, archived=?, updated_at=? WHERE id=?`,
+		cur.Title, cur.Body, cur.Data, joinTags(cur.Tags), cur.Pinned, cur.Archived, cur.UpdatedAt, id)
 	if err != nil {
 		return Item{}, err
 	}
+	logChange(it.DB, "item", id, "update", cur.Title)
 	return it.GetItem(id)
 }
 
 func (it *Items) DeleteItem(id string) error {
+	cur, err := it.GetItem(id)
+	if err != nil {
+		return err
+	}
 	res, err := it.DB.Exec(`DELETE FROM items WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -337,6 +366,7 @@ func (it *Items) DeleteItem(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(it.DB, "item", id, "delete", cur.Title)
 	return nil
 }
 
@@ -479,7 +509,7 @@ func mirrorItem(db dbtx, typ, nativeID, title, body string, tags []string, data 
 	err = db.QueryRow(`SELECT id FROM items WHERE type=? AND source_item_id=?`, typ, nativeID).Scan(&existing)
 	if errors.Is(err, sql.ErrNoRows) {
 		_, err = db.Exec(
-			`INSERT INTO items (`+itemCols+`) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+			`INSERT INTO items (`+itemCols+`) VALUES (?,?,?,?,?,?,?,?,0,0,?,?)`,
 			NewID(), typ, title, body, string(dataJSON), joinTags(normalizeTagList(tags)),
 			"api", nativeID, now, now)
 		return err
@@ -525,7 +555,7 @@ func (it *Items) ExpiringItems(days int) ([]ExpiringItem, error) {
 		days = 30
 	}
 	rows, err := it.DB.Query(
-		`SELECT ` + itemCols + ` FROM items ORDER BY created_at DESC LIMIT 500`)
+		`SELECT ` + itemCols + ` FROM items WHERE archived=0 ORDER BY created_at DESC LIMIT 500`)
 	if err != nil {
 		return nil, err
 	}

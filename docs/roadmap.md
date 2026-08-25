@@ -128,6 +128,27 @@
 
 ---
 
+## Phase 10 - Intelligence & Memory (10a DONE, 10b DONE, 10c next)
+
+**10a - Finance + Planner depth (DONE):**
+
+- Finance: `/finance/net-worth` (cumulative balances derived from transactions), upcoming bills from recurring detection surfaced in Today + MCP, merchant aliases (pattern->canonical, UNIQUE) applied on create/import, budget rollover (prior-month unused flows forward when flagged), per-account import profiles in `accounts.settings`
+- Planner: task subtasks (`parent_id`, tree in list), `blocked_by` (Today flags blocked items), `estimate_minutes` -> day-load minutes in Today bundle, event exceptions (`POST /events/{id}/exceptions` closes the ADR-0015 gap), habit `paused_until` respected by due-logic + consistency
+- MCP: `net_worth`, `upcoming_bills`, `manage_merchants`, `set_event_exception`, `review_week`
+
+**Accepts:** net-worth series matches manual cumulative sums; bills strip shows subscription due within 7d; alias rewrites noisy merchant on import; rollover budget carries unused prior-month amount; completing a subtask parent works independently; exception cancels one occurrence of a series.
+
+**10b - Memory & findability (DONE):**
+
+- Migration 00008: `changelog(entity, entity_id, action, title, at)`, `saved_searches`, `items.pinned`, `items.archived_at`
+- Changelog written app-level on every pillar mutation -> `GET /activity/feed` (+ entity filter) + MCP `activity_feed`
+- Search v2: `GET /v1/search` returns ranked items (pinned first, archived hidden) UNION typed scans of tasks/meals/workouts/transactions - one "find anything" call; `items` array kept for back-compat
+- Saved searches CRUD + run (`POST /saved_searches/{id}/run`); daily note get-or-create + append (`/knowledge/daily`); on-this-day resurface (`/knowledge/resurface`); pin/archive on items; `/v1/export` full JSON dump; backlinks data on `/items/{id}/links`
+- MCP: `activity_feed`, `manage_saved_searches`, `daily_note`, `resurface_memory`, `backlinks`, `export_data` added (49 tools total)
+
+**Accepts:** archiving an item hides it from lists/search until restored; pinned sorts first; feed logs create/update/complete/delete per entity with filter; saved-search run reproduces its query; second daily-note GET reuses the same note and append adds a bullet; resurface finds last year's same-day capture; export contains every table with rows.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).

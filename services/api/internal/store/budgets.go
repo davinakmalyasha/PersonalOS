@@ -30,6 +30,7 @@ func (f *Finance) UpsertBudget(categoryID, month string, amount int64, rollover 
 		if err != nil {
 			return Budget{}, err
 		}
+		logChange(f.DB, "budget", b.ID, "create", "budget "+month)
 		b.Category = ""
 		return f.GetBudget(b.ID)
 	case err != nil:
@@ -38,6 +39,7 @@ func (f *Finance) UpsertBudget(categoryID, month string, amount int64, rollover 
 		if _, err := f.DB.Exec(`UPDATE budgets SET amount=?, rollover=? WHERE id=?`, amount, rollover, existing); err != nil {
 			return Budget{}, err
 		}
+		logChange(f.DB, "budget", existing, "update", "budget "+month)
 		return f.GetBudget(existing)
 	}
 }

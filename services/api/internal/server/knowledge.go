@@ -34,6 +34,9 @@ func (s *Server) mountKnowledge(r chi.Router) {
 	})
 	r.Get("/knowledge/search", s.handleKnowledgeSearch)
 	r.Get("/knowledge/tags", s.handleKnowledgeTags)
+	r.Get("/knowledge/daily", s.handleDailyNote)
+	r.Patch("/knowledge/daily", s.handleAppendDailyNote)
+	r.Get("/knowledge/resurface", s.handleResurface)
 }
 
 func (s *Server) mountItems(r chi.Router) {
@@ -379,7 +382,7 @@ var knowledgeTypes = []string{"note", "bookmark", "reading"}
 func (s *Server) handleKnowledgeSearch(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	limit, _ := queryInt(r, "limit")
-	items, err := s.items.SearchItems(q.Get("q"), knowledgeTypes, "", q.Get("tag"), int(limit))
+	items, err := s.items.SearchItems(q.Get("q"), knowledgeTypes, "", q.Get("tag"), int(limit), false)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
@@ -448,7 +451,9 @@ func (s *Server) handleListItems(w http.ResponseWriter, r *http.Request) {
 	size, _ := queryInt(r, "page_size")
 	items, total, err := s.items.ListItems(store.ItemFilter{
 		Type: q.Get("type"), Tag: q.Get("tag"), Q: q.Get("q"),
-		Page: int(page), PageSize: int(size),
+		Pinned:          q.Get("pinned") == "true",
+		IncludeArchived: q.Get("include_archived") == "true",
+		Page:            int(page), PageSize: int(size),
 	})
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
@@ -475,6 +480,8 @@ type itemPatch struct {
 	Body  *string   `json:"body"`
 	Data  *string   `json:"data"`
 	Tags  *[]string `json:"tags"`
+	Pin   *bool     `json:"pinned"`
+	Arch  *bool     `json:"archived"`
 }
 
 func (s *Server) handleUpdateItem(w http.ResponseWriter, r *http.Request) {
@@ -489,6 +496,7 @@ func (s *Server) handleUpdateItem(w http.ResponseWriter, r *http.Request) {
 	}
 	item, err := s.items.UpdateItem(chiURLParam(r, "id"), store.ItemUpdate{
 		Title: req.Title, Body: req.Body, Data: req.Data, Tags: req.Tags,
+		Pinned: req.Pin, Archived: req.Arch,
 	})
 	if err != nil {
 		if !mapStoreErr(w, err) {
@@ -608,16 +616,7 @@ func (s *Server) handlePromoteItem(w http.ResponseWriter, r *http.Request) {
 
 // ---- Global search + tags ----
 
-func (s *Server) handleGlobalSearch(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	limit, _ := queryInt(r, "limit")
-	items, err := s.items.SearchItems(q.Get("q"), nil, q.Get("type"), q.Get("tag"), int(limit))
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items, "q": q.Get("q")})
-}
+// handleGlobalSearch lives in memory.go (search v2).
 
 func (s *Server) handleItemTags(w http.ResponseWriter, r *http.Request) {
 	limit, _ := queryInt(r, "limit")

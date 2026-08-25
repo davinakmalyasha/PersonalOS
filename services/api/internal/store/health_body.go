@@ -63,7 +63,15 @@ func (h *Health) CreateWorkout(performedAt string, title *string, notes, exercis
 	if err != nil {
 		return Workout{}, err
 	}
+	logChange(h.DB, "workout", w.ID, "create", workoutLogTitle(w))
 	return h.GetWorkout(w.ID)
+}
+
+func workoutLogTitle(w Workout) string {
+	if w.Title != nil && *w.Title != "" {
+		return *w.Title
+	}
+	return "workout"
 }
 
 func (h *Health) GetWorkout(id string) (Workout, error) {
@@ -187,10 +195,15 @@ func (h *Health) UpdateWorkout(id string, u WorkoutUpdate) (Workout, error) {
 	if err != nil {
 		return Workout{}, err
 	}
+	logChange(h.DB, "workout", id, "update", workoutLogTitle(cur))
 	return h.GetWorkout(id)
 }
 
 func (h *Health) DeleteWorkout(id string) error {
+	cur, err := h.GetWorkout(id)
+	if err != nil {
+		return err
+	}
 	res, err := h.DB.Exec(`DELETE FROM workouts WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -198,6 +211,7 @@ func (h *Health) DeleteWorkout(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(h.DB, "workout", id, "delete", workoutLogTitle(cur))
 	return nil
 }
 
@@ -242,6 +256,7 @@ func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float
 			id, measuredAt, w, f, notes, now, now); err != nil {
 			return BodyMetric{}, err
 		}
+		logChange(tx, "body_metric", id, "create", "body metrics "+day)
 	case err != nil:
 		return BodyMetric{}, err
 	default:
@@ -258,6 +273,7 @@ func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float
 			measuredAt, w, f, notes, now, existingID); err != nil {
 			return BodyMetric{}, err
 		}
+		logChange(tx, "body_metric", existingID, "update", "body metrics "+day)
 	}
 	if err := tx.Commit(); err != nil {
 		return BodyMetric{}, err

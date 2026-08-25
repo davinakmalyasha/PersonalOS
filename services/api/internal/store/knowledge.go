@@ -74,6 +74,7 @@ func (k *Knowledge) CreateNote(title, body string, tags []string, pinned bool) (
 		map[string]interface{}{"pinned": n.Pinned, "archived": false}); err != nil {
 		return Note{}, err
 	}
+	logChange(tx, "note", n.ID, "create", n.Title)
 	if err := tx.Commit(); err != nil {
 		return Note{}, err
 	}
@@ -202,6 +203,7 @@ func (k *Knowledge) UpdateNote(id string, u NoteUpdate) (Note, error) {
 		map[string]interface{}{"pinned": cur.Pinned, "archived": cur.ArchivedAt != nil}); err != nil {
 		return Note{}, err
 	}
+	logChange(tx, "note", id, "update", cur.Title)
 	if err := tx.Commit(); err != nil {
 		return Note{}, err
 	}
@@ -209,7 +211,8 @@ func (k *Knowledge) UpdateNote(id string, u NoteUpdate) (Note, error) {
 }
 
 func (k *Knowledge) DeleteNote(id string) error {
-	if _, err := k.GetNote(id); err != nil {
+	n, err := k.GetNote(id)
+	if err != nil {
 		return err
 	}
 	tx, err := k.DB.Begin()
@@ -223,6 +226,7 @@ func (k *Knowledge) DeleteNote(id string) error {
 	if err := unmirrorItem(tx, "note", id); err != nil {
 		return err
 	}
+	logChange(tx, "note", id, "delete", n.Title)
 	return tx.Commit()
 }
 
@@ -281,6 +285,7 @@ func (k *Knowledge) CreateBookmark(rawURL, title, description string, tags []str
 		map[string]interface{}{"url": b.URL}); err != nil {
 		return Bookmark{}, false, err
 	}
+	logChange(tx, "bookmark", b.ID, "create", b.Title)
 	if err := tx.Commit(); err != nil {
 		return Bookmark{}, false, err
 	}
@@ -410,6 +415,7 @@ func (k *Knowledge) UpdateBookmark(id string, u BookmarkUpdate) (Bookmark, error
 		map[string]interface{}{"url": cur.URL}); err != nil {
 		return Bookmark{}, err
 	}
+	logChange(tx, "bookmark", id, "update", cur.Title)
 	if err := tx.Commit(); err != nil {
 		return Bookmark{}, err
 	}
@@ -417,7 +423,8 @@ func (k *Knowledge) UpdateBookmark(id string, u BookmarkUpdate) (Bookmark, error
 }
 
 func (k *Knowledge) DeleteBookmark(id string) error {
-	if _, err := k.GetBookmark(id); err != nil {
+	b, err := k.GetBookmark(id)
+	if err != nil {
 		return err
 	}
 	tx, err := k.DB.Begin()
@@ -431,6 +438,7 @@ func (k *Knowledge) DeleteBookmark(id string) error {
 	if err := unmirrorItem(tx, "bookmark", id); err != nil {
 		return err
 	}
+	logChange(tx, "bookmark", id, "delete", b.Title)
 	return tx.Commit()
 }
 
@@ -526,6 +534,7 @@ func (k *Knowledge) CreateReading(title string, author, url *string, status stri
 	if err := mirrorReading(tx, rd); err != nil {
 		return Reading{}, err
 	}
+	logChange(tx, "reading", rd.ID, "create", rd.Title)
 	if err := tx.Commit(); err != nil {
 		return Reading{}, err
 	}
@@ -707,6 +716,7 @@ func (k *Knowledge) UpdateReading(id string, u ReadingUpdate) (Reading, error) {
 	if err := mirrorReading(tx, cur); err != nil {
 		return Reading{}, err
 	}
+	logChange(tx, "reading", id, "update", cur.Title)
 	if err := tx.Commit(); err != nil {
 		return Reading{}, err
 	}
@@ -714,7 +724,8 @@ func (k *Knowledge) UpdateReading(id string, u ReadingUpdate) (Reading, error) {
 }
 
 func (k *Knowledge) DeleteReading(id string) error {
-	if _, err := k.GetReading(id); err != nil {
+	rd, err := k.GetReading(id)
+	if err != nil {
 		return err
 	}
 	tx, err := k.DB.Begin()
@@ -728,5 +739,6 @@ func (k *Knowledge) DeleteReading(id string) error {
 	if err := unmirrorItem(tx, "reading", id); err != nil {
 		return err
 	}
+	logChange(tx, "reading", id, "delete", rd.Title)
 	return tx.Commit()
 }

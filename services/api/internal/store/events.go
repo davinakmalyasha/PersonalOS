@@ -82,6 +82,7 @@ func (p *Planner) CreateEvent(title, description string, startsAt string, endsAt
 	if err != nil {
 		return Event{}, err
 	}
+	logChange(p.DB, "event", e.ID, "create", e.Title)
 	return p.GetEvent(e.ID)
 }
 
@@ -177,10 +178,15 @@ func (p *Planner) UpdateEvent(id string, u EventUpdate) (Event, error) {
 	if err != nil {
 		return Event{}, err
 	}
+	logChange(p.DB, "event", id, "update", cur.Title)
 	return p.GetEvent(id)
 }
 
 func (p *Planner) DeleteEvent(id string) error {
+	e, err := p.GetEvent(id)
+	if err != nil {
+		return err
+	}
 	res, err := p.DB.Exec(`DELETE FROM events WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -188,6 +194,7 @@ func (p *Planner) DeleteEvent(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(p.DB, "event", id, "delete", e.Title)
 	return nil
 }
 

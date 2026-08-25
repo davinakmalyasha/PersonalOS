@@ -25,7 +25,11 @@ func (f *Finance) CreateCategory(name string, parentID, color *string) (Category
 	if isUniqueErr(err) {
 		return Category{}, ErrConflict // duplicate name under same parent
 	}
-	return c, err
+	if err != nil {
+		return Category{}, err
+	}
+	logChange(f.DB, "category", c.ID, "create", c.Name)
+	return c, nil
 }
 
 func (f *Finance) GetCategory(id string) (Category, error) {
@@ -99,6 +103,7 @@ func (f *Finance) UpdateCategory(id string, name *string, parentID, color **stri
 	if err != nil {
 		return Category{}, err
 	}
+	logChange(f.DB, "category", id, "update", newName)
 	return f.GetCategory(id)
 }
 
@@ -123,6 +128,10 @@ func (f *Finance) isDescendant(ancestorID, candidateID string) bool {
 // DeleteCategory removes a category. Transactions referencing it are either
 // blocked or reassigned; child categories always block.
 func (f *Finance) DeleteCategory(id string, reassignTo *string) error {
+	cur, err := f.GetCategory(id)
+	if err != nil {
+		return err
+	}
 	var children int
 	if err := f.DB.QueryRow(`SELECT COUNT(*) FROM categories WHERE parent_id=?`, id).Scan(&children); err != nil {
 		return err
@@ -166,5 +175,6 @@ func (f *Finance) DeleteCategory(id string, reassignTo *string) error {
 	if n, _ := res3.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(tx, "category", id, "delete", cur.Name)
 	return tx.Commit()
 }

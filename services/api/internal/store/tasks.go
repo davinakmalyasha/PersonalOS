@@ -177,6 +177,7 @@ func (p *Planner) CreateTask(title, notes, status, priority string, dueDate, pro
 	if err != nil {
 		return Task{}, err
 	}
+	logChange(p.DB, "task", t.ID, "create", t.Title)
 	return p.GetTask(t.ID)
 }
 
@@ -430,6 +431,11 @@ func (p *Planner) UpdateTask(id string, u TaskUpdate) (Task, error) {
 			return Task{}, err
 		}
 	}
+	action := "update"
+	if statusChanged && cur.Status == "done" {
+		action = "complete"
+	}
+	logChange(p.DB, "task", id, action, cur.Title)
 	return p.GetTask(id)
 }
 
@@ -484,6 +490,10 @@ func nextOccurrenceAfter(r planner.Recurrence, base time.Time) time.Time {
 }
 
 func (p *Planner) DeleteTask(id string) error {
+	cur, err := p.GetTask(id)
+	if err != nil {
+		return err
+	}
 	res, err := p.DB.Exec(`DELETE FROM tasks WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -491,6 +501,7 @@ func (p *Planner) DeleteTask(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(p.DB, "task", id, "delete", cur.Title)
 	return nil
 }
 

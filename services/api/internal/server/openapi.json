@@ -296,6 +296,8 @@
           "tags": { "type": "array", "items": { "type": "string" } },
           "source": { "type": "string", "enum": ["manual", "api", "mcp", "import", "promotion"] },
           "source_item_id": { "type": ["string", "null"], "description": "native record id when mirrored from a pillar table" },
+          "pinned": { "type": "boolean", "description": "pinned rows sort first in lists and search" },
+          "archived": { "type": "boolean", "description": "archived rows are hidden from lists/search unless include_archived=true" },
           "created_at": { "type": "string" },
           "updated_at": { "type": "string" }
         }
@@ -581,6 +583,71 @@
         "summary": "Weekly review bundle (Mon–Sun of the given date): completed tasks, habit consistency, events, spend vs budgets",
         "parameters": [{ "name": "date", "in": "query", "schema": { "type": "string", "format": "date" } }],
         "responses": { "200": { "description": "ReviewBundle" }, "400": { "description": "bad date" } }
+      }
+    },
+    "/v1/activity/feed": {
+      "get": {
+        "operationId": "activityFeed",
+        "summary": "Changelog of every mutation (what did my agent just do), newest first",
+        "parameters": [
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 30, "maximum": 200 } },
+          { "name": "entity", "in": "query", "schema": { "type": "string" }, "description": "filter: task|note|transaction|…" }
+        ],
+        "responses": { "200": { "description": "{items: [{entity, entity_id, action, title, at}]}" } }
+      }
+    },
+    "/v1/saved_searches": {
+      "get": { "operationId": "listSavedSearches", "summary": "Saved searches (named reusable queries)", "responses": { "200": { "description": "SavedSearch[]" } } },
+      "post": {
+        "operationId": "createSavedSearch",
+        "summary": "Save a named query {name, query: {q, type, tag, limit}}",
+        "responses": { "201": { "description": "created" }, "409": { "description": "duplicate name" } }
+      }
+    },
+    "/v1/saved_searches/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "operationId": "getSavedSearch", "summary": "Fetch one saved search", "responses": { "200": { "description": "SavedSearch" }, "404": { "description": "missing" } } },
+      "patch": { "operationId": "updateSavedSearch", "summary": "Rename and/or replace the stored query", "responses": { "200": { "description": "SavedSearch" } } },
+      "delete": { "operationId": "deleteSavedSearch", "summary": "Delete saved search", "responses": { "204": { "description": "deleted" } } }
+    },
+    "/v1/saved_searches/{id}/run": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "runSavedSearch",
+        "summary": "Execute a saved search via search v2",
+        "responses": { "200": { "description": "{search, items, hits}" }, "404": { "description": "missing" } }
+      }
+    },
+    "/v1/knowledge/daily": {
+      "get": {
+        "operationId": "dailyNote",
+        "summary": "Today's scratch note — created on first touch (tagged 'daily')",
+        "parameters": [{ "name": "date", "in": "query", "schema": { "type": "string", "format": "date" } }],
+        "responses": { "200": { "description": "{note, created, date}" }, "400": { "description": "bad date" } }
+      },
+      "patch": {
+        "operationId": "appendDailyNote",
+        "summary": "Append a bullet line to today's daily note (creates it when missing)",
+        "requestBody": { "content": { "application/json": { "schema": { "type": "object", "properties": { "text": { "type": "string" }, "date": { "type": "string", "format": "date" } } } } } },
+        "responses": { "200": { "description": "updated Note" }, "400": { "description": "empty text / bad date" } }
+      }
+    },
+    "/v1/knowledge/resurface": {
+      "get": {
+        "operationId": "resurface",
+        "summary": "On-this-day memory: notes/bookmarks/readings/items from earlier years' same month-day",
+        "parameters": [
+          { "name": "date", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 10, "maximum": 50 } }
+        ],
+        "responses": { "200": { "description": "{items: [{kind, id, title, url?, year, snippet?}], date}" }, "400": { "description": "bad date" } }
+      }
+    },
+    "/v1/export": {
+      "get": {
+        "operationId": "exportAll",
+        "summary": "Full JSON dump of every user-data table (portability/backup)",
+        "responses": { "200": { "description": "{exported_at, version, data: {table: rows[]}}" } }
       }
     },
     "/openapi.json": {
@@ -1259,14 +1326,14 @@
     "/v1/search": {
       "get": {
         "operationId": "globalSearch",
-        "summary": "Global FTS across ALL items (universal + mirrored pillars), bm25-ranked",
+        "summary": "Search v2 — one find-anything call: ranked item FTS (pinned first, archived hidden) UNION typed scans of tasks/meals/workouts/transactions",
         "parameters": [
           { "name": "q", "in": "query", "schema": { "type": "string" }, "description": "empty → recent items" },
           { "name": "type", "in": "query", "schema": { "type": "string" } },
           { "name": "tag", "in": "query", "schema": { "type": "string" } },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 20, "maximum": 100 } }
         ],
-        "responses": { "200": { "description": "ranked Item[]" } }
+        "responses": { "200": { "description": "{items: Item[] (compat), hits: [{kind: item|task|meal|workout|transaction, id, title, sub?, date?, amount_minor?}]}" } }
       }
     },
     "/v1/tags": {

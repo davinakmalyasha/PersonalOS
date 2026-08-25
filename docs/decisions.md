@@ -149,6 +149,13 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** FLIP across a responsive CSS grid with mixed spans is fragile; the overlay reads as "grows out of the board" at a fraction of the complexity, and detail content (tables, charts) gets stable sizing.
 - **Consequence:** expansion state is URL-driven (`?expand=<tile>`) + event-driven (`personal-os:focus` CustomEvent), so host apps and agents can drive it without touching internal state.
 
+## ADR-0022 — App-level changelog + search v2 union
+
+- **Date:** 2026-08-26
+- **Decision:** (a) every pillar mutation writes a row to the `changelog` table from Go store code (`logChange(dbtx, entity, entity_id, action, title)`), joining the caller's transaction when one exists — no triggers, best-effort on standalone writes. Actions are `create|update|delete|complete`. (b) `GET /v1/search` becomes search v2: ranked item-FTS hits plus LIKE scans over tasks/meals/workouts/transactions in one response; the legacy `items` array stays for back-compat. Archived items are excluded everywhere by default; pinned rows sort first.
+- **Why:** the agent activity feed ("what did my agent just do") needs human-readable entity+action rows, which `MAX(timestamp)` polling can't provide; app-level writes keep the CHECK-constrained schema trivial and let transactions keep mirrors+changelog atomic. A single find-anything call removes four round-trips from agent workflows.
+- **Consequence:** new tables must add `logChange` calls at their write sites and register in `exportTables` (`store/findability.go`) or they vanish from `/v1/export`; SQLite's TEXT-vs-INTEGER ordering means year comparisons on RFC3339 prefixes must compare text-to-text.
+
 ---
 
 Template for the next ADR:

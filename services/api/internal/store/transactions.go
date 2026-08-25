@@ -3,6 +3,7 @@
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/domain/finance"
@@ -70,6 +71,7 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 		return Transaction{}, err
 	}
 	f.pairDetectFor(t.ID)
+	logChange(f.DB, "transaction", t.ID, "create", t.Merchant)
 	return f.GetTransaction(t.ID)
 }
 
@@ -205,6 +207,7 @@ func (f *Finance) UpdateTransaction(id string, upd TransactionUpdate) (Transacti
 	if err != nil {
 		return Transaction{}, err
 	}
+	logChange(f.DB, "transaction", id, "update", cur.Merchant)
 	return f.GetTransaction(id)
 }
 
@@ -218,6 +221,10 @@ type TransactionUpdate struct {
 }
 
 func (f *Finance) DeleteTransaction(id string) error {
+	cur, err := f.GetTransaction(id)
+	if err != nil {
+		return err
+	}
 	res, err := f.DB.Exec(`DELETE FROM transactions WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -225,6 +232,7 @@ func (f *Finance) DeleteTransaction(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(f.DB, "transaction", id, "delete", cur.Merchant)
 	return nil
 }
 
@@ -287,6 +295,10 @@ func (f *Finance) ImportTransactions(accountID, currency string, drafts []financ
 	}
 	if err := tx.Commit(); err != nil {
 		return inserted, err
+	}
+	if inserted > 0 {
+		logChange(f.DB, "transaction", accountID, "create",
+			fmt.Sprintf("imported %d transactions", inserted))
 	}
 	// Transfer pairing after commit (best-effort).
 	for _, id := range newIDs {

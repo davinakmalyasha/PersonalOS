@@ -97,6 +97,7 @@ func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *i
 	if err != nil {
 		return Meal{}, err
 	}
+	logChange(h.DB, "meal", m.ID, "create", m.Title)
 	return h.GetMeal(m.ID)
 }
 
@@ -232,10 +233,15 @@ func (h *Health) UpdateMeal(id string, u MealUpdate) (Meal, error) {
 	if err != nil {
 		return Meal{}, err
 	}
+	logChange(h.DB, "meal", id, "update", cur.Title)
 	return h.GetMeal(id)
 }
 
 func (h *Health) DeleteMeal(id string) error {
+	cur, err := h.GetMeal(id)
+	if err != nil {
+		return err
+	}
 	res, err := h.DB.Exec(`DELETE FROM meals WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -243,5 +249,6 @@ func (h *Health) DeleteMeal(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(h.DB, "meal", id, "delete", cur.Title)
 	return nil
 }

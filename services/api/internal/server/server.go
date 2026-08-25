@@ -75,8 +75,11 @@ func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
 		}
 		if s.activity != nil {
 			r.Get("/activity", s.handleActivity)
+			r.Get("/activity/feed", s.handleActivityFeed)
 		}
 		s.mountExtras(r)
+		s.mountSavedSearches(r)
+		r.Get("/export", s.handleExport)
 	})
 
 	return r

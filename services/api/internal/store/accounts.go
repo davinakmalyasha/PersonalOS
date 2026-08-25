@@ -30,7 +30,11 @@ func (f *Finance) CreateAccount(name, typ, currency string) (Account, error) {
 	if isUniqueErr(err) {
 		return Account{}, ErrConflict
 	}
-	return a, err
+	if err != nil {
+		return Account{}, err
+	}
+	logChange(f.DB, "account", a.ID, "create", a.Name)
+	return a, nil
 }
 
 func (f *Finance) ListAccounts() ([]AccountWithBalance, error) {

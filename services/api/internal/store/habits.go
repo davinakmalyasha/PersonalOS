@@ -98,6 +98,7 @@ func (p *Planner) CreateHabit(name, description, cadence string, targetPerWeek i
 	if err != nil {
 		return Habit{}, err
 	}
+	logChange(p.DB, "habit", h.ID, "create", h.Name)
 	return h, nil
 }
 
@@ -250,10 +251,15 @@ func (p *Planner) UpdateHabit(id string, u HabitUpdate) (Habit, error) {
 	if err != nil {
 		return Habit{}, err
 	}
+	logChange(p.DB, "habit", id, "update", cur.Name)
 	return p.GetHabit(id)
 }
 
 func (p *Planner) DeleteHabit(id string) error {
+	h, err := p.getHabitRaw(id)
+	if err != nil {
+		return err
+	}
 	res, err := p.DB.Exec(`DELETE FROM habits WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -261,6 +267,7 @@ func (p *Planner) DeleteHabit(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(p.DB, "habit", id, "delete", h.Name)
 	return nil
 }
 
@@ -279,6 +286,9 @@ func (p *Planner) ToggleCheckoff(habitID, date string) (bool, error) {
 		return false, err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
+		if h, herr := p.getHabitRaw(habitID); herr == nil {
+			logChange(p.DB, "habit", habitID, "update", "checked off: "+h.Name)
+		}
 		return true, nil // inserted Ã¢â€ â€™ now done
 	}
 	// Already existed Ã¢â€ â€™ remove it.

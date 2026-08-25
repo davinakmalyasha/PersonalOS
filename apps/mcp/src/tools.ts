@@ -76,13 +76,15 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   server.tool(
     "update_item",
-    "Patch an existing item's title/body/data/tags.",
+    "Patch an existing item's title/body/data/tags; also pin/archive it.",
     {
       id: str(),
       title: z.string().optional(),
       body: z.string().optional(),
       data: z.record(z.unknown()).optional().describe("replacement JSON object"),
       tags: z.array(z.string()).optional(),
+      pinned: z.boolean().optional().describe("pinned rows sort first everywhere"),
+      archived: z.boolean().optional().describe("archived rows leave lists/search until restored"),
     },
     async (a: ToolArgs) =>
       run(() =>
@@ -91,6 +93,8 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
           ...(a.body !== undefined ? { body: a.body } : {}),
           ...(a.data !== undefined ? { data: JSON.stringify(a.data) } : {}),
           ...(a.tags !== undefined ? { tags: a.tags } : {}),
+          ...(a.pinned !== undefined ? { pinned: a.pinned } : {}),
+          ...(a.archived !== undefined ? { archived: a.archived } : {}),
         }),
       ),
   );
@@ -105,7 +109,7 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   server.tool(
     "global_search",
-    "Alias of search_items for when the user says 'find' or 'search' without naming a pillar.",
+    "Search v2 across EVERYTHING — items FTS plus typed scans of tasks, meals, workouts and transactions. Use when the user says 'find' without naming a pillar.",
     { q: str(), limit: intOpt() },
     async (a: ToolArgs) => run(() => api.get("/v1/search", a)),
   );
@@ -579,6 +583,96 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     { date: optStr().describe("any date inside the week (YYYY-MM-DD), default current week") },
     async (a: ToolArgs) => run(() => api.get("/v1/planner/review", { date: a.date })),
   );
+
+  // ---------- Phase 10b: memory & findability ----------
+
+  server.tool(
+    "activity_feed",
+    "Changelog of everything that changed recently — 'what did my agent just do?'. Optionally filter by entity (task|note|transaction|…).",
+    {
+      limit: intOpt().describe("default 30, max 200"),
+      entity: optStr(),
+    },
+    async (a: ToolArgs) => run(() => api.get("/v1/activity/feed", a)),
+  );
+
+  server.tool(
+    "manage_saved_searches",
+    "Named reusable queries. action=list|create|update|delete|run. Stored query is {q, type, tag, limit}.",
+    {
+      action: z.enum(["list", "create", "update", "delete", "run"]),
+      id: optStr().describe("required for update/delete/run"),
+      name: optStr(),
+      q: optStr().describe("create/update: query text"),
+      type: optStr(),
+      tag: optStr(),
+      limit: intOpt(),
+    },
+    async (a: ToolArgs) => {
+      const query = {
+        ...(a.q !== undefined ? { q: a.q } : {}),
+        ...(a.type !== undefined ? { type: a.type } : {}),
+        ...(a.tag !== undefined ? { tag: a.tag } : {}),
+        ...(a.limit !== undefined ? { limit: a.limit } : {}),
+      };
+      switch (a.action) {
+        case "create":
+          return run(() => api.post("/v1/saved_searches", { name: a.name, query }));
+        case "update":
+          return run(() => api.patch(`/v1/saved_searches/${a.id}`, { name: a.name, query }));
+        case "delete":
+          return run(() => api.del(`/v1/saved_searches/${a.id}`));
+        case "run":
+          return run(() => api.post(`/v1/saved_searches/${a.id}/run`));
+        default:
+          return run(() => api.get("/v1/saved_searches"));
+      }
+    },
+  );
+
+  server.tool(
+    "daily_note",
+    "Today's scratch note. action=get|append — append adds one bullet line (creates the note on first touch).",
+    {
+      action: z.enum(["get", "append"]).optional().default("get"),
+      text: optStr().describe("append: the line to add"),
+      date: optStr().describe("YYYY-MM-DD, default today"),
+    },
+    async (a: ToolArgs) => {
+      if (a.action === "append") {
+        if (!a.text) throw new Error("text required for append");
+        return run(() =>
+          api.patch("/v1/knowledge/daily", { text: a.text, date: a.date ?? null }),
+        );
+      }
+      return run(() => api.get("/v1/knowledge/daily", { date: a.date }));
+    },
+  );
+
+  server.tool(
+    "resurface_memory",
+    "On-this-day resurfacing: notes, bookmarks, readings and items captured on the same month-day in earlier years.",
+    {
+      date: optStr().describe("YYYY-MM-DD, default today"),
+      limit: intOpt().describe("default 10, max 50"),
+    },
+    async (a: ToolArgs) => run(() => api.get("/v1/knowledge/resurface", a)),
+  );
+
+  server.tool(
+    "backlinks",
+    "Everything linked to/from an item — the knowledge-graph panel for any capture.",
+    { id: str() },
+    async (a: ToolArgs) => run(() => api.get(`/v1/items/${a.id}/links`)),
+  );
+
+  server.tool(
+    "export_data",
+    "Full JSON dump of every table — portability and backups in one call.",
+    {},
+    async () => run(() => api.get("/v1/export")),
+  );
+
 // ---------- Phase 9: agentic depth ----------
 
   server.tool(

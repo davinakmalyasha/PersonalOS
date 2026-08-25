@@ -19,7 +19,11 @@ func (f *Finance) CreateRule(pattern, categoryID string, priority int) (Rule, er
 	r := Rule{ID: NewID(), Pattern: pattern, CategoryID: categoryID, Priority: priority, CreatedAt: NowRFC3339()}
 	_, err := f.DB.Exec(`INSERT INTO categorization_rules (id,pattern,category_id,priority,created_at) VALUES (?,?,?,?,?)`,
 		r.ID, r.Pattern, r.CategoryID, r.Priority, r.CreatedAt)
-	return r, err
+	if err != nil {
+		return Rule{}, err
+	}
+	logChange(f.DB, "rule", r.ID, "create", "rule: "+r.Pattern)
+	return r, nil
 }
 
 func (f *Finance) ListRules() ([]Rule, error) {
@@ -61,10 +65,15 @@ func (f *Finance) UpdateRule(id string, pattern *string, categoryID *string, pri
 	if err != nil {
 		return Rule{}, err
 	}
+	logChange(f.DB, "rule", id, "update", "rule: "+cur.Pattern)
 	return f.getRule(id)
 }
 
 func (f *Finance) DeleteRule(id string) error {
+	cur, err := f.getRule(id)
+	if err != nil {
+		return err
+	}
 	res, err := f.DB.Exec(`DELETE FROM categorization_rules WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -72,6 +81,7 @@ func (f *Finance) DeleteRule(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(f.DB, "rule", id, "delete", "rule: "+cur.Pattern)
 	return nil
 }
 

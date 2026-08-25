@@ -59,6 +59,7 @@ func (f *Finance) CreateGoal(kind, name string, targetMinor *int64, deadline *st
 	if err != nil {
 		return Goal{}, err
 	}
+	logChange(f.DB, "goal", g.ID, "create", g.Name)
 	return f.GetGoal(g.ID)
 }
 
@@ -141,6 +142,7 @@ func (f *Finance) UpdateGoal(id string, u GoalUpdate) (Goal, error) {
 	if err != nil {
 		return Goal{}, err
 	}
+	logChange(f.DB, "goal", id, "update", cur.Name)
 	return f.GetGoal(id)
 }
 
@@ -158,6 +160,10 @@ func (f *Finance) AddToGoal(id string, amountMinor int64) (Goal, error) {
 }
 
 func (f *Finance) DeleteGoal(id string) error {
+	cur, err := f.GetGoal(id)
+	if err != nil {
+		return err
+	}
 	res, err := f.DB.Exec(`DELETE FROM goals WHERE id=?`, id)
 	if err != nil {
 		return err
@@ -165,5 +171,6 @@ func (f *Finance) DeleteGoal(id string) error {
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
 	}
+	logChange(f.DB, "goal", id, "delete", cur.Name)
 	return nil
 }
