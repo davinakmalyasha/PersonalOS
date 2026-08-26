@@ -156,6 +156,13 @@ Living list. Numbered, timestamped, one decision per entry. If a decision is rev
 - **Why:** the agent activity feed ("what did my agent just do") needs human-readable entity+action rows, which `MAX(timestamp)` polling can't provide; app-level writes keep the CHECK-constrained schema trivial and let transactions keep mirrors+changelog atomic. A single find-anything call removes four round-trips from agent workflows.
 - **Consequence:** new tables must add `logChange` calls at their write sites and register in `exportTables` (`store/findability.go`) or they vanish from `/v1/export`; SQLite's TEXT-vs-INTEGER ordering means year comparisons on RFC3339 prefixes must compare text-to-text.
 
+## ADR-0023 — Scheduler talks HTTP, not SQL
+
+- **Date:** 2026-08-26
+- **Decision:** the phase-11 scheduler is a separate pure-Go module (`services/scheduler`) that runs its nightly passes by calling the API over HTTP (transfers/detect, finance/recurring + bills window, items/expiring, finance/summary budgets) and never opens the SQLite file. Webhook nudges fan out through `notify.Multi` (Telegram + Discord), and failures in any single job or channel are logged, never fatal to the loop.
+- **Why:** reusing store code via module replace-directives would couple two deployables and reintroduce cgo into the scheduler image; HTTP keeps it a 20-line-Dockerfile static-ish binary, matches how MCP already integrates, and means all business rules (alias rewrite, pairing windows, rollover) stay in exactly one place — the API.
+- **Consequence:** new digest sources must expose read endpoints (they almost always exist for MCP anyway); the API must be up for jobs to succeed (compose `depends_on` + per-job error logging covers restarts); nightly gating is UTC-based.
+
 ---
 
 Template for the next ADR:

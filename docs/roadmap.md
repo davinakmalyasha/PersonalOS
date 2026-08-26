@@ -158,6 +158,18 @@
 **Accepts:** logging two meals rolls macro totals into the rings against PUT targets; volume aggregates same exercise case-insensitively sorted by tonnage; trends return chest/waist series ascending; settings merge keeps untouched fields; board activity tile updates as agents write.
 
 ---
+## Phase 11 - Scheduler (DONE)
+
+**Features:**
+
+- `services/scheduler` (own Go module, pure Go): interval loop (`SCHED_INTERVAL_SECONDS`, default 6h) with optional nightly gating (`SCHED_RUN_HOUR` UTC; one pass/day, deduped) and optional immediate pass on boot
+- Nightly jobs over HTTP (no direct DB access, same rule as MCP): transfer pairing re-run, subscription recompute (+ bills due <=7d), expiring-items digest <=30d, budget-over check for the current month
+- Findings render as a text digest and fan out via Telegram bot API and/or Discord webhook (`TELEGRAM_*` / `DISCORD_WEBHOOK_URL`); quiet passes log only
+- Compose entry (`scheduler` service, depends on api) + Dockerfile; env template documents all knobs
+
+**Accepts:** fixture-API tests prove pairing count, Netflix-only bill selection within 7d, over-budget filtering, bearer token forwarding and 5xx surfacing; nightly gate fires exactly once per day at the configured UTC hour; Discord/Telegram payloads captured by httptest servers.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).
