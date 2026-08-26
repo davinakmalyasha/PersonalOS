@@ -925,6 +925,52 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     },
   );
 
+  // ---------- Phase 12d: knowledge depth ----------
+
+  server.tool(
+    "manage_highlights",
+    "First-class reading quotes with spaced-repetition review. action=add|list|due|review|delete — review climbs 1→3→7→14→30→60d when remembered.",
+    {
+      action: z.enum(["add", "list", "due", "review", "delete"]).optional().default("due"),
+      id: optStr().describe("review/delete"),
+      reading_id: optStr().describe("add/list"),
+      quote: str().optional().describe("add"),
+      note: optStr(),
+      location: optStr(),
+      remembered: z.boolean().optional().describe("review: true = schedule ahead, false = reset to due"),
+      limit: intOpt(),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "add":
+          if (!a.reading_id || !a.quote) throw new Error("reading_id + quote required");
+          return run(() =>
+            api.post(`/v1/reading/${a.reading_id}/highlights`, {
+              quote: a.quote,
+              note: a.note ?? "",
+              location: a.location ?? "",
+            }),
+          );
+        case "list":
+          return run(() => api.get(`/v1/reading/${a.reading_id}/highlights`));
+        case "review":
+          if (!a.id) throw new Error("id required");
+          return run(() => api.post(`/v1/highlights/${a.id}/review`, { remembered: a.remembered ?? true }));
+        case "delete":
+          return run(() => api.del(`/v1/highlights/${a.id}`));
+        default:
+          return run(() => api.get("/v1/knowledge/highlights/due", { limit: a.limit }));
+      }
+    },
+  );
+
+  server.tool(
+    "knowledge_graph",
+    "Local knowledge graph around an item (depth 1–2): nodes + edges incl. wiki-links and manual links.",
+    { id: str(), depth: intOpt().describe("1 or 2, default 1") },
+    async (a: ToolArgs) => run(() => api.get(`/v1/graph/${a.id}`, { depth: a.depth })),
+  );
+
 // ---------- Phase 9: agentic depth ----------
 
   server.tool(

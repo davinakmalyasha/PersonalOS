@@ -5,7 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchPanel } from "@/components/knowledge/search-panel";
 import { QuickAdd } from "@/components/knowledge/quick-add";
 import { ReadingBoard } from "@/components/knowledge/reading-board";
-import { DailyNoteCard, ResurfaceStrip } from "@/components/knowledge/memory-panels";
+import { DailyNoteCard, HighlightsDueCard, ResurfaceStrip } from "@/components/knowledge/memory-panels";
 
 export default function KnowledgePage() {
   const [reloadKey, setReloadKey] = useState(0);
@@ -50,6 +50,7 @@ export default function KnowledgePage() {
               </CardContent>
             </Card>
             <DailyNoteCard />
+            <HighlightsDueCard />
             <ResurfaceStrip />
           </section>
 

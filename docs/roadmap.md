@@ -217,6 +217,21 @@
 **Accepts:** squat search returns 3 seeded variants with taxonomy; starting Push A materializes 6 sets in one workout; logging 1.5 servings of Nasi Ayam yields 975 kcal / 63g protein / slot=lunch; partial food upserts do not wipe macros; weekly progress shows 1/4 = 25% after one workout.
 
 ---
+## Phase 12d - Knowledge & memory depth (DONE)
+
+**Features (reference-grounded: Readwise spaced repetition, Obsidian wiki-links/graph):**
+
+- **Highlights as records** (`highlights` table): quotes attach to readings with note + location, mirror into items FTS so they surface in `/v1/search`, and delete cleanly
+- **Spaced repetition**: SM-2-lite review queue — intervals climb 1→3→7→14→30→60 days on "remembered", a miss resets to due-now; `GET /knowledge/highlights/due` + review endpoint; scheduler-ready digest source
+- **Wiki-links**: `[[Title]]` in note bodies auto-create `wiki` edges to existing items (missing targets ignored); `GET /graph/{id}?depth=1|2` bounded BFS with nodes+edges; `/items/orphans` surfaces unconnected captures
+- Bookmark **meta-fetch**: missing titles are pulled from the page `<title>` server-side (2s timeout, explicit titles win)
+- **Audit fixes:** note pin/archive now propagate to the items mirror columns (archived notes no longer leak into search); `ListItems?q=` reports true totals beyond the 100-row search cap; expiry scan widened from newest-500 to newest-5000
+- MCP: `manage_highlights`, `knowledge_graph` added (64 tools total)
+- Web: Review-queue card on Knowledge page (remembered / forgot buttons)
+
+**Accepts:** new highlights appear in due queue and leave it after a remembered review; a miss returns them to due-now; `[[Target]]` creates exactly one wiki edge for an existing title and none for missing ones; graph depth-2 reaches linked concepts; archived notes vanish from search and return on unarchive.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).

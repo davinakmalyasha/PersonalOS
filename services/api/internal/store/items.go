@@ -156,6 +156,28 @@ func (it *Items) buildItemWhere(f ItemFilter) (string, []interface{}) {
 // search instead of a plain scan.
 func (it *Items) ListItems(f ItemFilter) ([]Item, int, error) {
 	if f.Q != "" {
+		// Count matches first so pagination metadata reflects reality even
+		// though search results are capped.
+		match := knowledge.SanitizeFTSQuery(f.Q)
+		if match != "" {
+			countWhere := []string{"items_fts MATCH ?", "i.archived=0"}
+			countArgs := []interface{}{match}
+			if f.Type != "" {
+				countWhere = append(countWhere, "i.type=?")
+				countArgs = append(countArgs, f.Type)
+			}
+			if f.Tag != "" {
+				countWhere = append(countWhere, "i.tags LIKE ?")
+				countArgs = append(countArgs, `%"`+f.Tag+`"%`)
+			}
+			var total int
+			if err := it.DB.QueryRow(
+				`SELECT COUNT(*) FROM items_fts JOIN items i ON i.rowid=items_fts.rowid WHERE `+strings.Join(countWhere, " AND "),
+				countArgs...).Scan(&total); err == nil && total > 100 {
+				items, err := it.SearchItems(f.Q, nil, f.Type, f.Tag, 100, f.IncludeArchived)
+				return items, total, err
+			}
+		}
 		items, err := it.SearchItems(f.Q, nil, f.Type, f.Tag, 100, f.IncludeArchived)
 		return items, len(items), err
 	}
@@ -555,7 +577,7 @@ func (it *Items) ExpiringItems(days int) ([]ExpiringItem, error) {
 		days = 30
 	}
 	rows, err := it.DB.Query(
-		`SELECT ` + itemCols + ` FROM items WHERE archived=0 ORDER BY created_at DESC LIMIT 500`)
+		`SELECT ` + itemCols + ` FROM items WHERE archived=0 ORDER BY created_at DESC LIMIT 5000`)
 	if err != nil {
 		return nil, err
 	}

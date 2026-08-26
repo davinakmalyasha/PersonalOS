@@ -4,7 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"html"
+	"io"
+	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/domain/knowledge"
 )
@@ -74,11 +79,27 @@ func (k *Knowledge) CreateNote(title, body string, tags []string, pinned bool) (
 		map[string]interface{}{"pinned": n.Pinned, "archived": false}); err != nil {
 		return Note{}, err
 	}
+	// Keep mirror pin/archive columns in sync so search ranks/hides correctly.
+	if _, err := tx.Exec(`UPDATE items SET pinned=? WHERE type='note' AND source_item_id=?`,
+		boolToInt(n.Pinned), n.ID); err != nil {
+		return Note{}, err
+	}
 	logChange(tx, "note", n.ID, "create", n.Title)
 	if err := tx.Commit(); err != nil {
 		return Note{}, err
 	}
+	// [[WikiLinks]] resolve against existing titles; edges land in item_links.
+	if _, err := k.SyncWikiLinks(n.ID, n.Body); err != nil {
+		return Note{}, err
+	}
 	return k.GetNote(n.ID)
+}
+
+func boolToInt(b bool) int {
+	if b {
+		return 1
+	}
+	return 0
 }
 
 func (k *Knowledge) GetNote(id string) (Note, error) {
@@ -203,8 +224,15 @@ func (k *Knowledge) UpdateNote(id string, u NoteUpdate) (Note, error) {
 		map[string]interface{}{"pinned": cur.Pinned, "archived": cur.ArchivedAt != nil}); err != nil {
 		return Note{}, err
 	}
+	if _, err := tx.Exec(`UPDATE items SET pinned=?, archived=? WHERE type='note' AND source_item_id=?`,
+		boolToInt(cur.Pinned), boolToInt(cur.ArchivedAt != nil), id); err != nil {
+		return Note{}, err
+	}
 	logChange(tx, "note", id, "update", cur.Title)
 	if err := tx.Commit(); err != nil {
+		return Note{}, err
+	}
+	if _, err := k.SyncWikiLinks(id, cur.Body); err != nil {
 		return Note{}, err
 	}
 	return k.GetNote(id)
@@ -266,6 +294,9 @@ func (k *Knowledge) CreateBookmark(rawURL, title, description string, tags []str
 		return Bookmark{}, false, err
 	}
 	if strings.TrimSpace(title) == "" {
+		title = fetchPageTitle(canonical)
+	}
+	if strings.TrimSpace(title) == "" {
 		title = canonicalHost(canonical)
 	}
 	now := NowRFC3339()
@@ -300,6 +331,35 @@ func canonicalHost(u string) string {
 	}
 	return s
 }
+
+// fetchPageTitle best-effort fetches <title> for a saved URL (2s timeout).
+// Any failure falls back to the caller's next choice.
+func fetchPageTitle(rawURL string) string {
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(rawURL)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return ""
+	}
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+	if err != nil {
+		return ""
+	}
+	m := titleRe.FindSubmatch(body)
+	if m == nil {
+		return ""
+	}
+	title := strings.TrimSpace(string(m[1]))
+	if len(title) > 300 {
+		title = title[:300]
+	}
+	return html.UnescapeString(title)
+}
+
+var titleRe = regexp.MustCompile(`(?is)<title[^>]*>([^<]{1,300})</title>`)
 
 func (k *Knowledge) bookmarkByURL(u string) (Bookmark, error) {
 	var b Bookmark

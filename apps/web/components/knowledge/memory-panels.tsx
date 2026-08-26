@@ -83,6 +83,69 @@ type Resurfaced = {
   snippet?: string;
 };
 
+type Highlight = {
+  id: string;
+  reading_id: string;
+  quote: string;
+  note: string;
+  interval_days: number;
+};
+
+// Spaced-repetition review queue (Readwise-style daily digest).
+export function HighlightsDueCard({ onChanged }: { onChanged?: () => void }) {
+  const [items, setItems] = useState<Highlight[]>([]);
+
+  const load = useCallback(() => {
+    apiGet<{ items: Highlight[] }>("/v1/knowledge/highlights/due")
+      .then((r) => setItems(r.items ?? []))
+      .catch(() => {});
+  }, []);
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const review = async (id: string, remembered: boolean) => {
+    await apiSend(`/v1/highlights/${id}/review`, "POST", { remembered });
+    load();
+    onChanged?.();
+  };
+
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <History className="h-3.5 w-3.5" /> Review queue
+        </CardTitle>
+        <span className="font-mono text-[10px] text-muted-foreground">{items.length} due</span>
+      </CardHeader>
+      <CardContent>
+        {items.length === 0 ? (
+          <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
+            Nothing to review — highlights land here on a spaced schedule.
+          </p>
+        ) : (
+          <ul className="space-y-2">
+            {items.slice(0, 3).map((hh) => (
+              <li key={hh.id} className="rounded-md border p-2.5 text-xs">
+                <p className="leading-5">“{hh.quote}”</p>
+                {hh.note && <p className="mt-1 text-[11px] text-muted-foreground">{hh.note}</p>}
+                <div className="mt-1.5 flex gap-1.5">
+                  <Button size="sm" variant="outline" className="h-6 px-2 text-[10px]" onClick={() => void review(hh.id, true)}>
+                    remembered
+                  </Button>
+                  <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] text-muted-foreground" onClick={() => void review(hh.id, false)}>
+                    forgot
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function ResurfaceStrip() {
   const [items, setItems] = useState<Resurfaced[]>([]);
   useEffect(() => {

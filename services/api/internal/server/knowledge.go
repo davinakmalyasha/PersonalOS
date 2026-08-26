@@ -37,6 +37,15 @@ func (s *Server) mountKnowledge(r chi.Router) {
 	r.Get("/knowledge/daily", s.handleDailyNote)
 	r.Patch("/knowledge/daily", s.handleAppendDailyNote)
 	r.Get("/knowledge/resurface", s.handleResurface)
+	// Phase 12d: highlights + graph.
+	r.Route("/reading/{id}/highlights", func(r chi.Router) {
+		r.Post("/", s.handleCreateHighlight)
+		r.Get("/", s.handleListHighlights)
+	})
+	r.Post("/highlights/{id}/review", s.handleReviewHighlight)
+	r.Delete("/highlights/{id}", s.handleDeleteHighlight)
+	r.Get("/knowledge/highlights/due", s.handleDueHighlights)
+	r.Get("/items/orphans", s.handleOrphanItems)
 }
 
 func (s *Server) mountItems(r chi.Router) {
@@ -53,6 +62,7 @@ func (s *Server) mountItems(r chi.Router) {
 	})
 	r.Get("/search", s.handleGlobalSearch)
 	r.Get("/tags", s.handleItemTags)
+	r.Get("/graph/{id}", s.handleGraph)
 }
 
 // ---- Notes ----
@@ -626,4 +636,100 @@ func (s *Server) handleItemTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{"items": tags})
+}
+
+// ---- Phase 12d: highlights, graph, orphans ----
+
+func (s *Server) handleCreateHighlight(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Quote    string `json:"quote"`
+		Note     string `json:"note"`
+		Location string `json:"location"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	hh, err := s.knowledge.CreateHighlight(chiURLParam(r, "id"), req.Quote, req.Note, req.Location)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) || errors.Is(err, store.ErrNotFound) {
+			fail(w, http.StatusBadRequest, "quote required; reading must exist")
+			return
+		}
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, hh)
+}
+
+func (s *Server) handleListHighlights(w http.ResponseWriter, r *http.Request) {
+	items, err := s.knowledge.HighlightsFor(chiURLParam(r, "id"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+func (s *Server) handleDeleteHighlight(w http.ResponseWriter, r *http.Request) {
+	if err := s.knowledge.DeleteHighlight(chiURLParam(r, "id")); err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /highlights/{id}/review {remembered} — SM-2-lite scheduling.
+func (s *Server) handleReviewHighlight(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Remembered *bool `json:"remembered"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	remembered := req.Remembered == nil || *req.Remembered
+	hh, err := s.knowledge.ReviewHighlight(chiURLParam(r, "id"), remembered)
+	if err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, hh)
+}
+
+func (s *Server) handleDueHighlights(w http.ResponseWriter, r *http.Request) {
+	limit, _ := queryInt(r, "limit")
+	items, err := s.knowledge.DueHighlights(int(limit))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+// GET /graph/{id}?depth=1|2 — local knowledge graph around an item.
+func (s *Server) handleGraph(w http.ResponseWriter, r *http.Request) {
+	depth, _ := queryInt(r, "depth")
+	out, err := store.Graph(s.db, chiURLParam(r, "id"), int(depth))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func (s *Server) handleOrphanItems(w http.ResponseWriter, r *http.Request) {
+	limit, _ := queryInt(r, "limit")
+	items, err := s.items.Orphans(int(limit))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
 }
