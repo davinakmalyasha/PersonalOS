@@ -8,7 +8,7 @@ export async function apiGet<T>(path: string): Promise<T> {
 
 export async function apiSend<T>(
   path: string,
-  method: "POST" | "PATCH" | "DELETE",
+  method: "POST" | "PATCH" | "PUT" | "DELETE",
   body?: unknown,
 ): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -109,6 +109,10 @@ export type Task = {
   priority: "low" | "med" | "high";
   due_date: string | null;
   project: string | null;
+  recurrence_rule: string | null;
+  parent_id: string | null;
+  blocked_by: string | null;
+  estimate_minutes: number | null;
   tags: string[];
   created_at: string;
   updated_at: string;
@@ -129,6 +133,8 @@ export type Habit = {
   description: string;
   cadence: "daily" | "weekly";
   target_per_week: number;
+  weekdays: string; // Mon-first mask e.g. "1110100"
+  paused_until: string | null;
   color: string | null;
   created_at: string;
   archived_at: string | null;
@@ -171,8 +177,28 @@ export type KnowledgeItem = {
   tags: string[];
   source: "manual" | "api" | "mcp" | "import" | "promotion";
   source_item_id: string | null;
+  pinned: boolean;
+  archived: boolean;
   created_at: string;
   updated_at: string;
+};
+
+// ---- Memory (phase 10b) ----
+
+export type Change = {
+  entity: string;
+  entity_id: string;
+  action: "create" | "update" | "delete" | "complete";
+  title: string;
+  at: string;
+};
+
+export type UpcomingBill = {
+  merchant: string;
+  amount_minor: number;
+  next_guess: string; // YYYY-MM-DD
+  days_left: number;
+  occurrences: number;
 };
 
 export type TagCount = { tag: string; count: number };
@@ -211,6 +237,9 @@ export type Meal = {
   notes: string;
   items: { name?: string; qty?: string; unit?: string }[];
   calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
   tags: string[];
   created_at: string;
   updated_at: string;
@@ -241,6 +270,33 @@ export type GroceryItem = {
 
 export type WeightPoint = { date: string; weight_kg: number };
 
+export type HealthSettings = {
+  calorie_target: number | null;
+  protein_target_g: number | null;
+  carbs_target_g: number | null;
+  fat_target_g: number | null;
+  water_target_ml: number | null;
+  weekly_workout_target: number | null;
+  updated_at: string;
+};
+
+export type VolumeRow = {
+  exercise: string;
+  sets: number;
+  reps_total: number;
+  volume_kg: number;
+  max_weight_kg: number;
+};
+
+export type TrendPoint = { date: string; value: number };
+
+export type ExercisePR = {
+  exercise: string;
+  max_weight_kg: number;
+  best_reps_at_max: number;
+  last_date: string;
+};
+
 export type HealthSummary = {
   from: string;
   to: string;
@@ -253,6 +309,13 @@ export type HealthSummary = {
     measured_on: string | null;
   };
   grocery: { total: number; checked: number };
+  macros: {
+    calories?: number | null;
+    protein_g?: number | null;
+    carbs_g?: number | null;
+    fat_g?: number | null;
+  };
+  settings?: HealthSettings | null;
   calorie_goal?: number | null;
   calories_today?: number | null;
   water_today_ml?: number | null;

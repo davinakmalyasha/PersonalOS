@@ -220,7 +220,7 @@ func (h *Health) DeleteWorkout(id string) error {
 // UpsertBodyMetric inserts or REPLACES the row for the same calendar day
 // (unique index on substr(measured_at,1,10)) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the day's latest measurement
 // wins. Returns the stored row.
-func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float64, notes string) (BodyMetric, error) {
+func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float64, notes, measurements string) (BodyMetric, error) {
 	if !validRFC3339(measuredAt) {
 		return BodyMetric{}, ErrInvalid
 	}
@@ -228,6 +228,12 @@ func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float
 		return BodyMetric{}, ErrInvalid
 	}
 	if bodyFatPct != nil && (*bodyFatPct <= 0 || *bodyFatPct >= 100) {
+		return BodyMetric{}, ErrInvalid
+	}
+	if strings.TrimSpace(measurements) == "" {
+		measurements = "{}"
+	}
+	if !json.Valid([]byte(measurements)) || !strings.HasPrefix(strings.TrimSpace(measurements), "{") {
 		return BodyMetric{}, ErrInvalid
 	}
 
@@ -252,8 +258,8 @@ func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float
 			f = *bodyFatPct
 		}
 		if _, err := tx.Exec(
-			`INSERT INTO body_metrics (id,measured_at,weight_kg,body_fat_pct,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?)`,
-			id, measuredAt, w, f, notes, now, now); err != nil {
+			`INSERT INTO body_metrics (id,measured_at,weight_kg,body_fat_pct,notes,measurements,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?)`,
+			id, measuredAt, w, f, notes, measurements, now, now); err != nil {
 			return BodyMetric{}, err
 		}
 		logChange(tx, "body_metric", id, "create", "body metrics "+day)
@@ -269,8 +275,8 @@ func (h *Health) UpsertBodyMetric(measuredAt string, weightKg, bodyFatPct *float
 			f = *bodyFatPct
 		}
 		if _, err := tx.Exec(
-			`UPDATE body_metrics SET measured_at=?, weight_kg=COALESCE(?,weight_kg), body_fat_pct=COALESCE(?,body_fat_pct), notes=?, updated_at=? WHERE id=?`,
-			measuredAt, w, f, notes, now, existingID); err != nil {
+			`UPDATE body_metrics SET measured_at=?, weight_kg=COALESCE(?,weight_kg), body_fat_pct=COALESCE(?,body_fat_pct), notes=?, measurements=?, updated_at=? WHERE id=?`,
+			measuredAt, w, f, notes, measurements, now, existingID); err != nil {
 			return BodyMetric{}, err
 		}
 		logChange(tx, "body_metric", existingID, "update", "body metrics "+day)
@@ -288,23 +294,50 @@ func (h *Health) BodyMetricForDay(day string) (BodyMetric, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return BodyMetric{}, ErrNotFound
 	}
-	return m, err
+	if err != nil {
+		return BodyMetric{}, err
+	}
+	hydrateBodyMetric(&m)
+	return m, nil
+}
+
+// GetBodyMetric fetches one row by id.
+func (h *Health) GetBodyMetric(id string) (BodyMetric, error) {
+	var m BodyMetric
+	err := h.DB.QueryRow(`SELECT `+bodyMetricCols+` FROM body_metrics WHERE id=?`, id).
+		Scan(bodyMetricScan(&m)...)
+	if errors.Is(err, sql.ErrNoRows) {
+		return BodyMetric{}, ErrNotFound
+	}
+	if err != nil {
+		return BodyMetric{}, err
+	}
+	hydrateBodyMetric(&m)
+	return m, nil
 }
 
 type BodyMetric struct {
-	ID         string   `json:"id"`
-	MeasuredAt string   `json:"measured_at"` // RFC3339 UTC
-	WeightKg   *float64 `json:"weight_kg"`
-	BodyFatPct *float64 `json:"body_fat_pct"`
-	Notes      string   `json:"notes"`
-	CreatedAt  string   `json:"created_at"`
-	UpdatedAt  string   `json:"updated_at"`
+	ID         string          `json:"id"`
+	MeasuredAt string          `json:"measured_at"` // RFC3339 UTC
+	WeightKg   *float64        `json:"weight_kg"`
+	BodyFatPct *float64        `json:"body_fat_pct"`
+	Notes      string          `json:"notes"`
+	Measurements json.RawMessage `json:"measurements"` // free-form {key: number} e.g. chest/waist cm
+	CreatedAt  string          `json:"created_at"`
+	UpdatedAt  string          `json:"updated_at"`
+
+	measurementsRaw string
 }
 
-const bodyMetricCols = `id,measured_at,weight_kg,body_fat_pct,notes,created_at,updated_at`
+const bodyMetricCols = `id,measured_at,weight_kg,body_fat_pct,notes,measurements,created_at,updated_at`
 
 func bodyMetricScan(m *BodyMetric) []interface{} {
-	return []interface{}{&m.ID, &m.MeasuredAt, &m.WeightKg, &m.BodyFatPct, &m.Notes, &m.CreatedAt, &m.UpdatedAt}
+	return []interface{}{&m.ID, &m.MeasuredAt, &m.WeightKg, &m.BodyFatPct, &m.Notes,
+		&m.measurementsRaw, &m.CreatedAt, &m.UpdatedAt}
+}
+
+func hydrateBodyMetric(m *BodyMetric) {
+	m.Measurements = json.RawMessage(defaultJSON([]byte(m.measurementsRaw)))
 }
 
 // ListBodyMetrics returns daily metrics newest-first within [from,to].
@@ -323,6 +356,7 @@ func (h *Health) ListBodyMetrics(from, to string) ([]BodyMetric, error) {
 		if err := rows.Scan(bodyMetricScan(&m)...); err != nil {
 			return nil, err
 		}
+		hydrateBodyMetric(&m)
 		out = append(out, m)
 	}
 	return out, rows.Err()
@@ -377,10 +411,12 @@ type HealthSummary struct {
 	Meals    MealsRollup    `json:"meals"`
 	Weight   WeightRollup   `json:"weight"`
 	Grocery  GroceryRollup  `json:"grocery"`
+	Macros   MacroTotals    `json:"macros"`
 
-	CalorieGoal   *int64 `json:"calorie_goal,omitempty"`
-	CaloriesToday *int64 `json:"calories_today,omitempty"`
-	WaterTodayMl  *int64 `json:"water_today_ml,omitempty"`
+	CalorieGoal   *int64          `json:"calorie_goal,omitempty"`
+	CaloriesToday *int64          `json:"calories_today,omitempty"`
+	WaterTodayMl  *int64          `json:"water_today_ml,omitempty"`
+	Settings      *HealthSettings `json:"settings,omitempty"` // targets for the rings
 }
 
 type WorkoutsRollup struct {
@@ -424,6 +460,14 @@ func (h *Health) Summary(from, to string) (HealthSummary, error) {
 	if cal.Valid {
 		v := cal.Int64
 		s.Meals.CaloriesTotal = &v
+	}
+	macros, merr := h.macroTotals(from, to)
+	if merr != nil {
+		return s, merr
+	}
+	s.Macros = macros
+	if hs, hserr := h.GetSettings(); hserr == nil {
+		s.Settings = &hs
 	}
 
 	// Weight rollup over window.

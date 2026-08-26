@@ -413,6 +413,9 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
       eaten_at: optStr().describe("RFC3339, default now UTC"),
       items: z.array(z.record(z.unknown())).optional(),
       calories: z.number().int().min(0).optional(),
+      protein_g: z.number().min(0).optional(),
+      carbs_g: z.number().min(0).optional(),
+      fat_g: z.number().min(0).optional(),
       notes: optStr(),
       tags: z.array(z.string()).optional(),
     },
@@ -671,6 +674,55 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     "Full JSON dump of every table — portability and backups in one call.",
     {},
     async () => run(() => api.get("/v1/export")),
+  );
+
+  // ---------- Phase 10c: health macros + wiring ----------
+
+  server.tool(
+    "manage_health_settings",
+    "Daily macro/water targets + weekly workout target. action=get|set. set merges: only provided fields change.",
+    {
+      action: z.enum(["get", "set"]).optional().default("get"),
+      calorie_target: z.number().int().min(0).optional(),
+      protein_target_g: z.number().int().min(0).optional(),
+      carbs_target_g: z.number().int().min(0).optional(),
+      fat_target_g: z.number().int().min(0).optional(),
+      water_target_ml: z.number().int().min(0).optional(),
+      weekly_workout_target: intOpt().describe("1..14 sessions per week"),
+    },
+    async (a: ToolArgs) => {
+      if (a.action === "get") return run(() => api.get("/v1/health/settings"));
+      const body = {
+        calorie_target: a.calorie_target,
+        protein_target_g: a.protein_target_g,
+        carbs_target_g: a.carbs_target_g,
+        fat_target_g: a.fat_target_g,
+        water_target_ml: a.water_target_ml,
+        weekly_workout_target: a.weekly_workout_target,
+      };
+      return run(() => api.patch("/v1/health/settings", body));
+    },
+  );
+
+  server.tool(
+    "workout_volume",
+    "Weekly tonnage: volume (weight x reps) per exercise within a window, heaviest load first.",
+    { from: optStr().describe("YYYY-MM-DD"), to: optStr().describe("YYYY-MM-DD") },
+    async (a: ToolArgs) => {
+      const to =
+        (a.to as string | undefined) ?? new Date().toISOString().slice(0, 10);
+      const from =
+        (a.from as string | undefined) ??
+        new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+      return run(() => api.get("/v1/health/volume", { from, to }));
+    },
+  );
+
+  server.tool(
+    "measurement_trends",
+    "Free-form body measurements (chest/waist/…) as per-key time series over a window.",
+    { from: optStr().describe("YYYY-MM-DD"), to: optStr().describe("YYYY-MM-DD") },
+    async (a: ToolArgs) => run(() => api.get("/v1/body-metrics/trends", a)),
   );
 
 // ---------- Phase 9: agentic depth ----------

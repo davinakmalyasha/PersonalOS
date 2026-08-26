@@ -331,6 +331,9 @@
           "notes": { "type": "string" },
           "items": { "type": "array", "items": { "type": "object" }, "description": "[{name, qty, unit}]" },
           "calories": { "type": ["integer", "null"], "minimum": 0 },
+          "protein_g": { "type": ["number", "null"], "minimum": 0 },
+          "carbs_g": { "type": ["number", "null"], "minimum": 0 },
+          "fat_g": { "type": ["number", "null"], "minimum": 0 },
           "tags": { "type": "array", "items": { "type": "string" } },
           "created_at": { "type": "string" },
           "updated_at": { "type": "string" }
@@ -385,7 +388,21 @@
           "weight_kg": { "type": ["number", "null"], "exclusiveMinimum": 0 },
           "body_fat_pct": { "type": ["number", "null"], "exclusiveMinimum": 0, "exclusiveMaximum": 100 },
           "notes": { "type": "string" },
+          "measurements": { "type": "object", "description": "free-form {key: number}, e.g. {chest_cm:100}", "additionalProperties": { "type": "number" } },
           "created_at": { "type": "string" },
+          "updated_at": { "type": "string" }
+        }
+      },
+      "HealthSettings": {
+        "type": "object",
+        "description": "Singleton targets row (id='default'); all fields null until set. PUT merges.",
+        "properties": {
+          "calorie_target": { "type": ["integer", "null"], "minimum": 0 },
+          "protein_target_g": { "type": ["integer", "null"], "minimum": 0 },
+          "carbs_target_g": { "type": ["integer", "null"], "minimum": 0 },
+          "fat_target_g": { "type": ["integer", "null"], "minimum": 0 },
+          "water_target_ml": { "type": ["integer", "null"], "minimum": 0 },
+          "weekly_workout_target": { "type": ["integer", "null"], "minimum": 1, "maximum": 14 },
           "updated_at": { "type": "string" }
         }
       },
@@ -418,6 +435,17 @@
             "type": "object",
             "properties": { "count": { "type": "integer" }, "calories_total": { "type": ["integer", "null"] } }
           },
+          "macros": {
+            "type": "object",
+            "description": "macro totals over the window (rings numerator)",
+            "properties": {
+              "calories": { "type": ["integer", "null"] },
+              "protein_g": { "type": ["number", "null"] },
+              "carbs_g": { "type": ["number", "null"] },
+              "fat_g": { "type": ["number", "null"] }
+            }
+          },
+          "settings": { "$ref": "#/components/schemas/HealthSettings" },
           "weight": {
             "type": "object",
             "properties": {
@@ -1567,6 +1595,37 @@
           { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
         ],
         "responses": { "200": { "description": "HealthSummary", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthSummary" } } } } }
+      }
+    },
+    "/v1/health/volume": {
+      "get": {
+        "operationId": "workoutVolume",
+        "summary": "Weekly tonnage: volume (weight x reps), sets and max load per exercise, sorted by volume",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "{items: [{exercise, sets, reps_total, volume_kg, max_weight_kg}]}" } }
+      }
+    },
+    "/v1/health/settings": {
+      "get": { "operationId": "getHealthSettings", "summary": "Macro/water/workout targets (all-null defaults before first set)", "responses": { "200": { "description": "HealthSettings" } } },
+      "put": {
+        "operationId": "updateHealthSettings",
+        "summary": "Upsert targets; merge semantics — only provided fields change",
+        "responses": { "200": { "description": "HealthSettings" }, "400": { "description": "invalid targets" } }
+      },
+      "patch": { "operationId": "patchHealthSettings", "summary": "Alias of PUT (merge)", "responses": { "200": { "description": "HealthSettings" } } }
+    },
+    "/v1/body-metrics/trends": {
+      "get": {
+        "operationId": "measurementTrends",
+        "summary": "Free-form measurements as per-key ascending time series",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "format": "date" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "format": "date" } }
+        ],
+        "responses": { "200": { "description": "{trends: {key: [{date, value}]}}" } }
       }
     },
     "/v1/health/weight-series": {

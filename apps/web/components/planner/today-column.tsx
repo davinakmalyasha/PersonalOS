@@ -16,7 +16,7 @@ function TaskRow({
   done?: boolean;
 }) {
   return (
-    <li className="flex items-start gap-2 rounded-md border p-2">
+    <li className={`flex items-start gap-2 rounded-md border p-2 ${task.parent_id ? "ml-5" : ""}`}>
       <Button
         size="icon"
         variant={done ? "default" : "outline"}
@@ -36,6 +36,24 @@ function TaskRow({
             <Badge variant={task.priority === "high" ? "default" : "secondary"} className="text-[9px] uppercase">
               {task.priority}
             </Badge>
+          )}
+          {task.recurrence_rule && (
+            <Badge variant="outline" className="font-mono text-[9px]">
+              ↻ recurring
+            </Badge>
+          )}
+          {task.blocked_by && (
+            <Badge variant="outline" className="font-mono text-[9px] uppercase text-destructive/80">
+              blocked
+            </Badge>
+          )}
+          {task.parent_id && (
+            <Badge variant="secondary" className="text-[9px] uppercase">
+              subtask
+            </Badge>
+          )}
+          {task.estimate_minutes != null && task.estimate_minutes > 0 && (
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">~{task.estimate_minutes}m</span>
           )}
         </div>
       </div>
@@ -87,8 +105,14 @@ export function TodayColumn({
         </section>
 
         <section>
-          <h3 className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-            Due today · {dueToday.length}
+          <h3 className="mb-1.5 flex items-center justify-between text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            <span>Due today · {dueToday.length}</span>
+            <span className="font-mono text-[10px] normal-case tabular-nums">
+              day load ~
+              {dueToday.reduce((sum, t) => sum + (t.estimate_minutes ?? 0), 0) +
+                overdue.reduce((sum, t) => sum + (t.estimate_minutes ?? 0), 0)}{" "}
+              min
+            </span>
           </h3>
           {dueToday.length === 0 ? (
             <p className="rounded-md border border-dashed p-2 text-xs text-muted-foreground">Clear day.</p>

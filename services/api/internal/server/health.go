@@ -1,7 +1,6 @@
 package server
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -49,6 +48,11 @@ func (s *Server) mountHealth(r chi.Router) {
 	})
 	r.Get("/health/summary", s.handleHealthSummary)
 	r.Get("/health/weight-series", s.handleWeightSeries)
+	r.Get("/health/volume", s.handleHealthVolume)
+	r.Get("/health/settings", s.handleGetHealthSettings)
+	r.Put("/health/settings", s.handleUpdateHealthSettings)
+	r.Patch("/health/settings", s.handleUpdateHealthSettings)
+	r.Get("/body-metrics/trends", s.handleMeasurementTrends)
 }
 
 func (s *Server) requireHealth(w http.ResponseWriter) (*store.Health, bool) {
@@ -67,6 +71,9 @@ type mealReq struct {
 	Notes    string          `json:"notes"`
 	Items    json.RawMessage `json:"items"` // JSON array of {name, qty, unit}
 	Calories *int64          `json:"calories"`
+	ProteinG *float64        `json:"protein_g"`
+	CarbsG   *float64        `json:"carbs_g"`
+	FatG     *float64        `json:"fat_g"`
 	Tags     []string        `json:"tags"`
 }
 
@@ -95,7 +102,7 @@ func (s *Server) handleCreateMeal(w http.ResponseWriter, r *http.Request) {
 	if req.Items != nil {
 		items = string(req.Items)
 	}
-	m, err := h.CreateMeal(req.EatenAt, req.Title, req.Notes, items, req.Calories, req.Tags)
+	m, err := h.CreateMeal(req.EatenAt, req.Title, req.Notes, items, req.Calories, req.ProteinG, req.CarbsG, req.FatG, req.Tags)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
 			fail(w, http.StatusBadRequest, "invalid fields",
@@ -152,6 +159,9 @@ type mealPatch struct {
 	Notes    *string          `json:"notes"`
 	Items    *json.RawMessage `json:"items"`
 	Calories **int64          `json:"calories"`
+	ProteinG **float64        `json:"protein_g"`
+	CarbsG   **float64        `json:"carbs_g"`
+	FatG     **float64        `json:"fat_g"`
 	Tags     *[]string        `json:"tags"`
 }
 
@@ -172,7 +182,9 @@ func (s *Server) handleUpdateMeal(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := h.UpdateMeal(chiURLParam(r, "id"), store.MealUpdate{
 		EatenAt: req.EatenAt, Title: req.Title, Notes: req.Notes,
-		Items: itemsStr, Calories: req.Calories, Tags: req.Tags,
+		Items: itemsStr, Calories: req.Calories,
+		ProteinG: req.ProteinG, CarbsG: req.CarbsG, FatG: req.FatG,
+		Tags: req.Tags,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
@@ -599,10 +611,11 @@ func (s *Server) handleUpsertBodyMetric(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	var req struct {
-		MeasuredAt string   `json:"measured_at"`
-		WeightKg   *float64 `json:"weight_kg"`
-		BodyFatPct *float64 `json:"body_fat_pct"`
-		Notes      string   `json:"notes"`
+		MeasuredAt   string          `json:"measured_at"`
+		WeightKg     *float64        `json:"weight_kg"`
+		BodyFatPct   *float64        `json:"body_fat_pct"`
+		Notes        string          `json:"notes"`
+		Measurements json.RawMessage `json:"measurements"` // free-form {key: number}
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
@@ -612,7 +625,11 @@ func (s *Server) handleUpsertBodyMetric(w http.ResponseWriter, r *http.Request) 
 		fail(w, http.StatusBadRequest, "measured_at required", fieldError{"measured_at", "required RFC3339"})
 		return
 	}
-	m, err := h.UpsertBodyMetric(req.MeasuredAt, req.WeightKg, req.BodyFatPct, req.Notes)
+	measurements := ""
+	if req.Measurements != nil {
+		measurements = string(req.Measurements)
+	}
+	m, err := h.UpsertBodyMetric(req.MeasuredAt, req.WeightKg, req.BodyFatPct, req.Notes, measurements)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
 			fail(w, http.StatusBadRequest, "invalid metric values",
@@ -646,15 +663,11 @@ func (s *Server) handleGetBodyMetric(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	var m store.BodyMetric
-	err := h.DB.QueryRow(`SELECT id,measured_at,weight_kg,body_fat_pct,notes,created_at,updated_at FROM body_metrics WHERE id=?`, chiURLParam(r, "id")).
-		Scan(&m.ID, &m.MeasuredAt, &m.WeightKg, &m.BodyFatPct, &m.Notes, &m.CreatedAt, &m.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		fail(w, http.StatusNotFound, "not found")
-		return
-	}
+	m, err := h.GetBodyMetric(chiURLParam(r, "id"))
 	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
 		return
 	}
 	writeJSON(w, http.StatusOK, m)
@@ -703,4 +716,76 @@ func (s *Server) handleWeightSeries(w http.ResponseWriter, r *http.Request) {
 	}
 	bucket := orDefault(q.Get("bucket"), "day")
 	writeJSON(w, http.StatusOK, map[string]interface{}{"bucket": bucket, "points": points})
+}
+
+// ---- Phase 10c: macros, volume, trends, settings ----
+
+func (s *Server) handleHealthVolume(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	vol, err := h.WeeklyVolume(q.Get("from"), q.Get("to"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"from": q.Get("from"), "to": q.Get("to"), "items": vol,
+	})
+}
+
+func (s *Server) handleMeasurementTrends(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	trends, err := h.MeasurementTrends(q.Get("from"), q.Get("to"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"trends": trends})
+}
+
+func (s *Server) handleGetHealthSettings(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	settings, err := h.GetSettings()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
+}
+
+func (s *Server) handleUpdateHealthSettings(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	var req store.HealthSettings
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	settings, err := h.UpdateSettings(store.HealthSettings{
+		CalorieTarget: req.CalorieTarget, ProteinTargetG: req.ProteinTargetG,
+		CarbsTargetG: req.CarbsTargetG, FatTargetG: req.FatTargetG,
+		WaterTargetMl: req.WaterTargetMl, WeeklyWorkoutTarget: req.WeeklyWorkoutTarget,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid targets",
+				fieldError{"targets", "non-negative; weekly_workout_target 1..14"})
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, settings)
 }

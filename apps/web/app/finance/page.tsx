@@ -7,6 +7,12 @@ import { SummaryCards } from "@/components/finance/summary-cards";
 import { TransactionsTable } from "@/components/finance/transactions-table";
 import { ImportPanel } from "@/components/finance/import-panel";
 import {
+  AliasesPanel,
+  BillsStrip,
+  GoalsPanel,
+  SubscriptionsPanel,
+} from "@/components/finance/extras-panels";
+import {
   apiGet,
   currentMonth,
   type Account,
@@ -62,6 +68,8 @@ export default function FinancePage() {
           </p>
         )}
 
+        <BillsStrip />
+
         <SummaryCards
           income={summary?.income_minor ?? 0}
           outcome={summary?.outcome_minor ?? 0}
@@ -75,6 +83,12 @@ export default function FinancePage() {
           <div className="lg:col-span-2">
             <BudgetBars budgets={summary?.budgets ?? []} />
           </div>
+        </div>
+
+        <div className="grid gap-4 lg:grid-cols-3">
+          <GoalsPanel />
+          <SubscriptionsPanel />
+          <AliasesPanel onChanged={() => void reload()} />
         </div>
 
         <ImportPanel accounts={accounts.map((a) => ({ id: a.id, name: a.name }))} onImported={() => void reload()} />

@@ -128,7 +128,7 @@
 
 ---
 
-## Phase 10 - Intelligence & Memory (10a DONE, 10b DONE, 10c next)
+## Phase 10 - Intelligence & Memory (10a+10b+10c DONE, 11 next)
 
 **10a - Finance + Planner depth (DONE):**
 
@@ -147,6 +147,15 @@
 - MCP: `activity_feed`, `manage_saved_searches`, `daily_note`, `resurface_memory`, `backlinks`, `export_data` added (49 tools total)
 
 **Accepts:** archiving an item hides it from lists/search until restored; pinned sorts first; feed logs create/update/complete/delete per entity with filter; saved-search run reproduces its query; second daily-note GET reuses the same note and append adds a bullet; resurface finds last year's same-day capture; export contains every table with rows.
+
+**10c - Health macros + full wiring (DONE):**
+
+- Migration 00009: `meals.protein_g/carbs_g/fat_g`, `body_metrics.measurements` JSON (free-form {key: number}), singleton `health_settings` (macro/water targets + weekly workout target)
+- Meal macros + daily targets -> summary rings (`macros` + `settings` on /health/summary); weekly tonnage `/health/volume` (weight x reps per exercise, case-insensitive); measurement trends `/body-metrics/trends` (per-key ascending series); settings GET/PUT+PATCH with merge semantics
+- UI wiring: Activity Feed tile on the board (what did my agent just do), bills strip in Money detail, goals/subscriptions/aliases panels on Finance, weekday chips + subtask indent + recurring/blocked badges + day-load minutes on Planner, daily-note + on-this-day resurface cards on Knowledge (backlinks panel already inline in search), macro rings + PR table + water button + tonnage + measurement trends on Health
+- MCP: `manage_health_settings`, `workout_volume`, `measurement_trends` + macros on `log_meal` added (52 tools total)
+
+**Accepts:** logging two meals rolls macro totals into the rings against PUT targets; volume aggregates same exercise case-insensitively sorted by tonnage; trends return chest/waist series ascending; settings merge keeps untouched fields; board activity tile updates as agents write.
 
 ---
 ## Versioning

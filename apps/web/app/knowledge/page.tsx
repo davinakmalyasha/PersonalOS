@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { SearchPanel } from "@/components/knowledge/search-panel";
 import { QuickAdd } from "@/components/knowledge/quick-add";
 import { ReadingBoard } from "@/components/knowledge/reading-board";
+import { DailyNoteCard, ResurfaceStrip } from "@/components/knowledge/memory-panels";
 
 export default function KnowledgePage() {
   const [reloadKey, setReloadKey] = useState(0);
@@ -39,7 +40,7 @@ export default function KnowledgePage() {
         )}
 
         <div className="grid gap-4 lg:grid-cols-5">
-          <section className="lg:col-span-2 space-y-4">
+          <section className="space-y-4 lg:col-span-2">
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Capture</CardTitle>
@@ -48,6 +49,8 @@ export default function KnowledgePage() {
                 <QuickAdd onAdded={reload} />
               </CardContent>
             </Card>
+            <DailyNoteCard />
+            <ResurfaceStrip />
           </section>
 
           <section className="lg:col-span-3">

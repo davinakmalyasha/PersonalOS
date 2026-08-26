@@ -44,24 +44,27 @@ func rawJSONArray(s string) json.RawMessage {
 // ---- Meals ----
 
 type Meal struct {
-	ID        string          `json:"id"`
-	EatenAt   string          `json:"eaten_at"` // RFC3339 UTC
-	Title     string          `json:"title"`
-	Notes     string          `json:"notes"`
-	Items     json.RawMessage `json:"items"` // JSON array of {name, qty, unit}
-	Calories  *int64          `json:"calories"`
-	Tags      []string        `json:"tags"`
-	CreatedAt string          `json:"created_at"`
-	UpdatedAt string          `json:"updated_at"`
+	ID       string          `json:"id"`
+	EatenAt  string          `json:"eaten_at"` // RFC3339 UTC
+	Title    string          `json:"title"`
+	Notes    string          `json:"notes"`
+	Items    json.RawMessage `json:"items"` // JSON array of {name, qty, unit}
+	Calories *int64          `json:"calories"`
+	ProteinG *float64        `json:"protein_g"`
+	CarbsG   *float64        `json:"carbs_g"`
+	FatG     *float64        `json:"fat_g"`
+	Tags     []string        `json:"tags"`
+	CreatedAt string         `json:"created_at"`
+	UpdatedAt string         `json:"updated_at"`
 
 	tagsRaw string
 }
 
-const mealCols = `id,eaten_at,title,notes,items,calories,tags,created_at,updated_at`
+const mealCols = `id,eaten_at,title,notes,items,calories,protein_g,carbs_g,fat_g,tags,created_at,updated_at`
 
 func mealScan(m *Meal, tagsRaw *string) []interface{} {
 	return []interface{}{&m.ID, &m.EatenAt, &m.Title, &m.Notes, &m.Items,
-		&m.Calories, tagsRaw, &m.CreatedAt, &m.UpdatedAt}
+		&m.Calories, &m.ProteinG, &m.CarbsG, &m.FatG, tagsRaw, &m.CreatedAt, &m.UpdatedAt}
 }
 
 type MealFilter struct {
@@ -71,7 +74,7 @@ type MealFilter struct {
 	PageSize int
 }
 
-func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *int64, tags []string) (Meal, error) {
+func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *int64, proteinG, carbsG, fatG *float64, tags []string) (Meal, error) {
 	if !validRFC3339(eatenAt) || strings.TrimSpace(title) == "" {
 		return Meal{}, ErrInvalid
 	}
@@ -81,10 +84,16 @@ func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *i
 	if calories != nil && *calories < 0 {
 		return Meal{}, ErrInvalid
 	}
+	for _, m := range []*float64{proteinG, carbsG, fatG} {
+		if m != nil && *m < 0 {
+			return Meal{}, ErrInvalid
+		}
+	}
 	now := NowRFC3339()
 	m := Meal{
 		ID: NewID(), EatenAt: eatenAt, Title: title, Notes: notes,
 		Items: rawJSONArray(itemsJSON), Calories: calories,
+		ProteinG: proteinG, CarbsG: carbsG, FatG: fatG,
 		Tags: normalizeTagList(tags), CreatedAt: now, UpdatedAt: now,
 	}
 	var cal interface{}
@@ -92,8 +101,9 @@ func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *i
 		cal = *calories
 	}
 	_, err := h.DB.Exec(
-		`INSERT INTO meals (`+mealCols+`) VALUES (?,?,?,?,?,?,?,?,?)`,
-		m.ID, m.EatenAt, m.Title, m.Notes, m.Items, cal, joinTags(m.Tags), m.CreatedAt, m.UpdatedAt)
+		`INSERT INTO meals (`+mealCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+		m.ID, m.EatenAt, m.Title, m.Notes, m.Items, cal, m.ProteinG, m.CarbsG, m.FatG,
+		joinTags(m.Tags), m.CreatedAt, m.UpdatedAt)
 	if err != nil {
 		return Meal{}, err
 	}
@@ -181,7 +191,10 @@ type MealUpdate struct {
 	Title    *string
 	Notes    *string
 	Items    *string
-	Calories **int64 // ptr-to-nil clears; ptr-to-value sets
+	Calories **int64   // ptr-to-nil clears; ptr-to-value sets
+	ProteinG **float64 // same convention
+	CarbsG   **float64
+	FatG     **float64
 	Tags     *[]string
 }
 
@@ -218,6 +231,22 @@ func (h *Health) UpdateMeal(id string, u MealUpdate) (Meal, error) {
 			cur.Calories = &v
 		}
 	}
+	for _, f := range []struct {
+		upd  **float64
+		dest **float64
+	}{{u.ProteinG, &cur.ProteinG}, {u.CarbsG, &cur.CarbsG}, {u.FatG, &cur.FatG}} {
+		if f.upd == nil {
+			continue
+		}
+		if *f.upd == nil {
+			*f.dest = nil
+		} else if **f.upd < 0 {
+			return Meal{}, ErrInvalid
+		} else {
+			v := **f.upd
+			*f.dest = &v
+		}
+	}
 	if u.Tags != nil {
 		cur.Tags = normalizeTagList(*u.Tags)
 	}
@@ -228,8 +257,9 @@ func (h *Health) UpdateMeal(id string, u MealUpdate) (Meal, error) {
 		cal = *cur.Calories
 	}
 	_, err = h.DB.Exec(
-		`UPDATE meals SET eaten_at=?, title=?, notes=?, items=?, calories=?, tags=?, updated_at=? WHERE id=?`,
-		cur.EatenAt, cur.Title, cur.Notes, cur.Items, cal, joinTags(cur.Tags), cur.UpdatedAt, id)
+		`UPDATE meals SET eaten_at=?, title=?, notes=?, items=?, calories=?, protein_g=?, carbs_g=?, fat_g=?, tags=?, updated_at=? WHERE id=?`,
+		cur.EatenAt, cur.Title, cur.Notes, cur.Items, cal, cur.ProteinG, cur.CarbsG, cur.FatG,
+		joinTags(cur.Tags), cur.UpdatedAt, id)
 	if err != nil {
 		return Meal{}, err
 	}

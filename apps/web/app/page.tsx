@@ -13,10 +13,12 @@ import { SummaryCards } from "@/components/finance/summary-cards";
 import { CategoryChart } from "@/components/finance/category-chart";
 import { BudgetBars } from "@/components/finance/budget-bars";
 import { TransactionsTable } from "@/components/finance/transactions-table";
+import { BillsStrip } from "@/components/finance/extras-panels";
 import { TodayColumn } from "@/components/planner/today-column";
 import { WeightChart } from "@/components/health/weight-chart";
 import { WorkoutBars } from "@/components/health/workout-bars";
 import { GroceryChecklist } from "@/components/health/grocery-checklist";
+import { MacroRings, PRTable, WaterButton, VolumeTable } from "@/components/health/rings-prs";
 import { QuickAdd } from "@/components/knowledge/quick-add";
 import {
   apiGet,
@@ -24,6 +26,8 @@ import {
   currentMonth,
   todayStr,
   type Account,
+  type Change,
+  type ExercisePR,
   type GroceryItem,
   type HealthSummary,
   type KnowledgeItem,
@@ -32,12 +36,13 @@ import {
   type Occurrence,
   type Task,
   type TodayBundle,
+  type VolumeRow,
   type WeightPoint,
   type Workout,
 } from "@/lib/api";
 import { usePillarVersion } from "@/lib/use-activity";
 
-type TileId = "today" | "money" | "body" | "upcoming" | "captures" | "grocery";
+type TileId = "today" | "money" | "body" | "upcoming" | "captures" | "grocery" | "activity";
 
 const TILES: { id: TileId; pillar: string }[] = [
   { id: "today", pillar: "planner" },
@@ -46,6 +51,7 @@ const TILES: { id: TileId; pillar: string }[] = [
   { id: "upcoming", pillar: "planner" },
   { id: "captures", pillar: "universal" },
   { id: "grocery", pillar: "health" },
+  { id: "activity", pillar: "activity" },
 ];
 
 // ---- generic versioned fetch ----
@@ -186,6 +192,7 @@ function MoneyDetail({ month }: { month: string }) {
   const accountId = accounts?.items?.[0]?.id ?? "";
   return (
     <div className="space-y-4 overflow-y-auto pr-1" style={{ maxHeight: "calc(100vh - 12rem)" }}>
+      <BillsStrip />
       <SummaryCards
         income={money?.income_minor ?? 0}
         outcome={money?.outcome_minor ?? 0}
@@ -252,13 +259,103 @@ function BodyDetail() {
     `/v1/meals?from=${isoDaysAgo(6)}&to=${to}&page_size=50`,
     "health",
   );
+  const summary = useTileData<HealthSummary>(`/v1/health/summary?from=${isoDaysAgo(13)}&to=${to}`, "health");
+  const prs = useTileData<{ items: ExercisePR[] }>("/v1/health/prs", "health");
+  const volume = useTileData<{ items: VolumeRow[] }>(`/v1/health/volume?from=${isoDaysAgo(6)}&to=${to}`, "health");
   return (
     <div className="space-y-4 overflow-y-auto pr-1" style={{ maxHeight: "calc(100vh - 12rem)" }}>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <div className="lg:col-span-2">
+          <MacroRings summary={summary} />
+        </div>
+        <Card>
+          <CardContent className="flex h-full flex-col items-center justify-center gap-2 py-4">
+            <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Water today</p>
+            <p className="font-mono text-2xl font-semibold tabular-nums">
+              {summary?.water_today_ml != null ? `${(summary.water_today_ml / 1000).toFixed(2)}L` : "0.00L"}
+            </p>
+            <WaterButton onChanged={() => void apiGet(`/v1/health/summary?from=${from}&to=${to}`)} />
+          </CardContent>
+        </Card>
+      </div>
       <WeightChart points={weights?.points ?? []} />
       <WorkoutBars workouts={workouts?.items ?? []} />
+      <PRTable prs={prs?.items ?? []} />
+      <VolumeTable rows={volume?.items ?? []} />
       <RecentMini meals={meals?.items ?? []} workouts={workouts?.items ?? []} />
     </div>
   );
+}
+
+// ---- Activity feed tile ("what did my agent just do") ----
+
+function useAllPillarVersion(): string {
+  const plannerV = usePillarVersion("planner");
+  const financeV = usePillarVersion("finance");
+  const healthV = usePillarVersion("health");
+  const universalV = usePillarVersion("universal");
+  const knowledgeV = usePillarVersion("knowledge");
+  return [plannerV, financeV, healthV, universalV, knowledgeV].join("|");
+}
+
+function ActivityFeed({ limit, entities }: { limit: number; entities?: string[] }) {
+  const version = useAllPillarVersion();
+  const [feed, setFeed] = useState<Change[]>([]);
+  useEffect(() => {
+    let alive = true;
+    apiGet<{ items: Change[] }>("/v1/activity/feed?limit=60")
+      .then((r) => {
+        if (!alive) return;
+        let list = r.items ?? [];
+        if (entities && entities.length > 0) list = list.filter((c) => !entities.includes(c.entity));
+        setFeed(list.slice(0, limit));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [version, limit]);
+
+  return (
+    <ul className="space-y-1">
+      {feed.map((c, i) => (
+        <li key={`${c.entity_id}-${c.at}-${i}`} className="flex items-center gap-2 text-xs">
+          <span className="w-10 shrink-0 font-mono text-[10px] tabular-nums text-muted-foreground">
+            {c.at.slice(11, 16)}
+          </span>
+          <Badge2 action={c.action} entity={c.entity} />
+          <span className={`truncate ${c.action === "delete" ? "text-muted-foreground line-through" : ""}`}>
+            {c.title}
+          </span>
+        </li>
+      ))}
+      {feed.length === 0 && (
+        <li className="rounded-md border border-dashed p-3 text-center text-muted-foreground">
+          Nothing changed yet.
+        </li>
+      )}
+    </ul>
+  );
+}
+
+function Badge2({ action, entity }: { action: Change["action"]; entity: string }) {
+  return (
+    <>
+      <span className="shrink-0 rounded-full border px-1.5 font-mono text-[9px] uppercase text-muted-foreground">
+        {action}
+      </span>
+      <span className="w-16 shrink-0 truncate font-mono text-[9px] uppercase text-muted-foreground">{entity}</span>
+    </>
+  );
+}
+
+function ActivityPreview() {
+  return <ActivityFeed limit={5} entities={["body_metric", "habit"]} />;
+}
+
+function ActivityDetail() {
+  return <ActivityFeed limit={40} />;
 }
 
 function RecentMini({ meals, workouts }: { meals: Meal[]; workouts: Workout[] }) {
@@ -461,6 +558,7 @@ function Board() {
     upcoming: <UpcomingPreview data={upcoming} />,
     captures: <CapturesPreview items={captures?.items ?? null} expiring={expiring?.items ?? null} />,
     grocery: <GroceryPreview items={grocery?.items ?? null} />,
+    activity: <ActivityPreview />,
   };
 
   const tileDetail: Record<TileId, React.ReactNode> = {
@@ -470,6 +568,7 @@ function Board() {
     upcoming: <UpcomingDetail data={upcoming} />,
     captures: <CapturesDetail reload={bump} />,
     grocery: <GroceryChecklist reloadKey={reloadKey} onChanged={bump} />,
+    activity: <ActivityDetail />,
   };
 
   const tileSpan: Record<TileId, string> = {
@@ -479,6 +578,7 @@ function Board() {
     upcoming: "col-span-6 lg:col-span-4",
     captures: "col-span-6 lg:col-span-2",
     grocery: "col-span-6",
+    activity: "col-span-6 lg:col-span-2",
   };
 
   const expand = (id: TileId) => {

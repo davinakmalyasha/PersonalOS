@@ -152,7 +152,18 @@ export function TasksTable({ onChanged }: { onChanged: () => void }) {
                 {(data?.items ?? []).map((t) => (
                   <tr key={t.id} className="border-t">
                     <td className={`px-3 py-2 ${t.status === "done" ? "text-muted-foreground line-through" : ""}`}>
-                      {t.title}
+                      <div className={`flex items-center gap-1.5 ${t.parent_id ? "pl-5" : ""}`}>
+                        <span className="truncate">{t.title}</span>
+                        {t.recurrence_rule && (
+                          <Badge variant="outline" className="shrink-0 font-mono text-[9px]">↻</Badge>
+                        )}
+                        {t.blocked_by && (
+                          <Badge variant="outline" className="shrink-0 text-[9px] uppercase text-destructive/80">blocked</Badge>
+                        )}
+                        {t.parent_id && (
+                          <span title={t.parent_id} className="shrink-0 text-muted-foreground">↳</span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-3 py-2">
                       <Badge

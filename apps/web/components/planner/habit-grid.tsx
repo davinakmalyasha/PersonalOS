@@ -7,6 +7,32 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { Habit } from "@/lib/api";
 
 const DAYS = 28;
+const WEEKDAY_LABELS = ["M", "T", "W", "T", "F", "S", "S"];
+
+function WeekdayChips({ mask, pausedUntil }: { mask: string; pausedUntil?: string | null }) {
+  const m = mask && mask.length === 7 ? mask : "1111111";
+  const paused = !!pausedUntil && pausedUntil >= new Date().toISOString().slice(0, 10);
+  return (
+    <div className="flex items-center gap-1">
+      {m.split("").map((on, i) => (
+        <span
+          key={i}
+          title={["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][i]}
+          className={`flex h-4 w-4 items-center justify-center rounded-full border font-mono text-[8px] ${
+            on === "1" ? "border-foreground bg-foreground text-background" : "text-muted-foreground opacity-50"
+          }`}
+        >
+          {WEEKDAY_LABELS[i]}
+        </span>
+      ))}
+      {paused && (
+        <Badge variant="outline" className="ml-1 font-mono text-[9px] uppercase">
+          paused → {pausedUntil}
+        </Badge>
+      )}
+    </div>
+  );
+}
 
 function lastNDates(n: number): string[] {
   const out: string[] = [];
@@ -37,6 +63,10 @@ function HabitTile({ habit }: { habit: Habit }) {
         <Badge variant="outline" className="shrink-0 font-mono text-[10px]">
           🔥 {habit.streaks.current} · best {habit.streaks.longest}
         </Badge>
+      </div>
+
+      <div className="mt-2">
+        <WeekdayChips mask={(habit as Habit).weekdays ?? ""} pausedUntil={habit.paused_until} />
       </div>
 
       {/* Heatmap: 4 weeks × 7 days */}
