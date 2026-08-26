@@ -1,10 +1,13 @@
-﻿package server
+package server
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/davinakmalyasha/PersonalOS/services/api/internal/domain/planner"
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/store"
 	"github.com/go-chi/chi/v5"
 )
@@ -16,6 +19,7 @@ func (s *Server) mountPlanner(r chi.Router) {
 		r.Get("/{id}", s.handleGetTask)
 		r.Patch("/{id}", s.handleUpdateTask)
 		r.Delete("/{id}", s.handleDeleteTask)
+		r.Post("/{id}/skip", s.handleSkipTask)
 	})
 	r.Route("/habits", func(r chi.Router) {
 		r.Post("/", s.handleCreateHabit)
@@ -36,6 +40,8 @@ func (s *Server) mountPlanner(r chi.Router) {
 	r.Get("/planner/today", s.handlePlannerToday)
 	r.Get("/planner/upcoming", s.handlePlannerUpcoming)
 	r.Get("/planner/overview", s.handlePlannerOverview)
+	r.Get("/planner/parse-date", s.handleParseDate)
+	r.Get("/planner/calendar.ics", s.handleCalendarICS)
 }
 
 func (s *Server) requirePlanner(w http.ResponseWriter) (*store.Planner, bool) {
@@ -54,6 +60,7 @@ type taskReq struct {
 	Status          string   `json:"status"`
 	Priority        string   `json:"priority"`
 	DueDate         *string  `json:"due_date"`
+	DueTime         *string  `json:"due_time"` // HH:MM (12b)
 	Project         *string  `json:"project"`
 	RecurrenceRule  *string  `json:"recurrence_rule"`
 	ParentID        *string  `json:"parent_id"`
@@ -94,7 +101,7 @@ func (s *Server) handleCreateTask(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid task", details...)
 		return
 	}
-	t, err := p.CreateTask(req.Title, req.Notes, req.Status, req.Priority, req.DueDate, req.Project, req.Tags, req.RecurrenceRule, req.ParentID, req.BlockedBy, req.EstimateMinutes)
+	t, err := p.CreateTask(req.Title, req.Notes, req.Status, req.Priority, req.DueDate, req.Project, req.Tags, req.RecurrenceRule, req.ParentID, req.BlockedBy, req.EstimateMinutes, req.DueTime, nil)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -170,6 +177,7 @@ type taskPatch struct {
 	Status          *string   `json:"status"`
 	Priority        *string   `json:"priority"`
 	DueDate         *string   `json:"due_date"`
+	DueTime         *string   `json:"due_time"`
 	Project         **string  `json:"project"`
 	RecurrenceRule  **string  `json:"recurrence_rule"`
 	ParentID        *string   `json:"parent_id"`
@@ -204,7 +212,7 @@ func (s *Server) handleUpdateTask(w http.ResponseWriter, r *http.Request) {
 	}
 	u := store.TaskUpdate{
 		Title: req.Title, Notes: req.Notes, Status: req.Status,
-		Priority: req.Priority, DueDate: req.DueDate, Tags: req.Tags,
+		Priority: req.Priority, DueDate: req.DueDate, DueTime: req.DueTime, Tags: req.Tags,
 	}
 	if req.Project != nil {
 		u.Project = *req.Project
@@ -381,7 +389,9 @@ func (s *Server) handleToggleCheckoff(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Date string `json:"date"`
+		Date  string   `json:"date"`
+		Value *float64 `json:"value"` // measurable quantity (12b)
+		Note  string   `json:"note"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
@@ -391,6 +401,28 @@ func (s *Server) handleToggleCheckoff(w http.ResponseWriter, r *http.Request) {
 		req.Date = time.Now().UTC().Format("2006-01-02")
 	} else if err := validDate(req.Date); err != nil {
 		fail(w, http.StatusBadRequest, "invalid date", fieldError{"date", err.Error()})
+		return
+	}
+	if req.Value != nil || req.Note != "" {
+		if err := p.UpsertCheckoff(chiURLParam(r, "id"), req.Date, req.Value, req.Note); err != nil {
+			if errors.Is(err, store.ErrInvalid) {
+				fail(w, http.StatusBadRequest, "value must be >= 0")
+				return
+			}
+			if !mapStoreErr(w, err) {
+				fail(w, http.StatusInternalServerError, err.Error())
+			}
+			return
+		}
+		resp := map[string]interface{}{
+			"habit_id": chiURLParam(r, "id"),
+			"date":     req.Date,
+			"done":     true,
+		}
+		if h, gerr := p.GetHabit(chiURLParam(r, "id")); gerr == nil {
+			resp["streaks"] = h.Streaks
+		}
+		writeJSON(w, http.StatusOK, resp)
 		return
 	}
 	done, err := p.ToggleCheckoff(chiURLParam(r, "id"), req.Date)
@@ -641,4 +673,104 @@ func (s *Server) handlePlannerOverview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, b)
+}
+
+// ---- Phase 12b: planner depth ----
+
+// POST /tasks/{id}/skip — advance a recurring task without completing it.
+func (s *Server) handleSkipTask(w http.ResponseWriter, r *http.Request) {
+	p, ok := s.requirePlanner(w)
+	if !ok {
+		return
+	}
+	next, err := p.SkipTaskOccurrence(chiURLParam(r, "id"))
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "only recurring tasks can be skipped")
+			return
+		}
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, next)
+}
+
+// GET /planner/parse-date?q=tomorrow%20at%207pm — natural-language date.
+func (s *Server) handleParseDate(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query().Get("q")
+	if q == "" {
+		fail(w, http.StatusBadRequest, "q required", fieldError{"q", "natural language date, e.g. 'fri at 7pm'"})
+		return
+	}
+	parsed, err := planner.ParseNaturalDate(q, time.Now().UTC())
+	if err != nil {
+		fail(w, http.StatusBadRequest, err.Error(), fieldError{"q", "unparseable"})
+		return
+	}
+	writeJSON(w, http.StatusOK, parsed)
+}
+
+// GET /planner/calendar.ics?days=90 — read-only feed of events + dated tasks.
+func (s *Server) handleCalendarICS(w http.ResponseWriter, r *http.Request) {
+	p := s.planner
+	days := 90
+	if n, ok := queryInt(r, "days"); ok && int(n) > 0 && int(n) <= 365 {
+		days = int(n)
+	}
+	now := time.Now().UTC()
+	from := now.Format("2006-01-02")
+	to := now.AddDate(0, 0, days).Format("2006-01-02")
+
+	var b strings.Builder
+	b.WriteString("BEGIN:VCALENDAR\r\nVERSION:2.0\r\nPRODID:-//PersonalOS//EN\r\nCALSCALE:GREGORIAN\r\n")
+
+	occurrences, _ := p.OccurrencesBetween(from, to)
+	for _, o := range occurrences {
+		b.WriteString("BEGIN:VEVENT\r\n")
+		fmt.Fprintf(&b, "UID:%s-%s@personal-os\r\n", o.EventID, o.Date)
+		b.WriteString(icsLine("SUMMARY", o.Title))
+		b.WriteString(icsLine("LOCATION", o.Location))
+		st, _ := time.Parse(time.RFC3339, o.StartsAt)
+		fmt.Fprintf(&b, "DTSTART:%sZ\r\n", st.UTC().Format("20060102T150405"))
+		if o.EndsAt != nil {
+			if en, perr := time.Parse(time.RFC3339, *o.EndsAt); perr == nil {
+				fmt.Fprintf(&b, "DTEND:%sZ\r\n", en.UTC().Format("20060102T150405"))
+			}
+		}
+		b.WriteString("END:VEVENT\r\n")
+	}
+
+	if tasks, total, err := p.ListTasks(store.TaskFilter{Status: "open", DueBefore: to, PageSize: 100}); err == nil {
+		_ = total
+		for _, t := range tasks {
+			if t.DueDate == nil || *t.DueDate < from {
+				continue
+			}
+			b.WriteString("BEGIN:VEVENT\r\n")
+			fmt.Fprintf(&b, "UID:%s@personal-os\r\n", t.ID)
+			b.WriteString(icsLine("SUMMARY", "[task] "+t.Title))
+			day, perr := time.Parse("2006-01-02", *t.DueDate)
+			if perr == nil {
+				fmt.Fprintf(&b, "DTSTART;VALUE=DATE:%s\r\n", day.Format("20060102"))
+			}
+			b.WriteString("END:VEVENT\r\n")
+		}
+	}
+
+	b.WriteString("END:VCALENDAR\r\n")
+	w.Header().Set("Content-Type", "text/calendar; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="personal-os.ics"`)
+	_, _ = w.Write([]byte(b.String()))
+}
+
+func icsLine(key, val string) string {
+	val = strings.ReplaceAll(val, "\\", "\\\\")
+	val = strings.ReplaceAll(val, "\n", "\\n")
+	val = strings.ReplaceAll(val, ",", "\\,")
+	if val == "" {
+		return ""
+	}
+	return key + ":" + val + "\r\n"
 }

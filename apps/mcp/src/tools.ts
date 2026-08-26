@@ -262,7 +262,12 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
       notes: optStr(),
       priority: z.enum(["low", "med", "high"]).optional(),
       due_date: optStr().describe("YYYY-MM-DD"),
+      due_time: optStr().describe("HH:MM time-of-day"),
       project: optStr(),
+      recurrence_rule: optStr().describe("FREQ=DAILY|WEEKLY|MONTHLY;INTERVAL=n;COUNT=n|UNTIL=YYYYMMDD"),
+      parent_id: optStr().describe("subtask of this task id (one level deep)"),
+      blocked_by: optStr().describe("task id that must complete first"),
+      estimate_minutes: intOpt(),
       tags: z.array(z.string()).optional(),
     },
     async (a: ToolArgs) => run(() => api.post("/v1/tasks", a)),
@@ -270,12 +275,15 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   server.tool(
     "update_task",
-    "Patch task status/priority/due/title/notes. status=done stamps completed_at.",
+    "Patch task status/priority/due/title/notes/recurrence/estimate. status=done stamps completed_at; completing a recurring task spawns the next instance.",
     {
       id: str(),
       status: z.enum(["todo", "doing", "done"]).optional(),
       priority: z.enum(["low", "med", "high"]).optional(),
       due_date: optStr().describe("empty clears"),
+      due_time: optStr().describe("HH:MM; empty clears"),
+      recurrence_rule: optStr().describe("empty clears"),
+      estimate_minutes: intOpt(),
       title: z.string().optional(),
       notes: z.string().optional(),
     },
@@ -315,10 +323,21 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   server.tool(
     "check_habit",
-    "Toggle today's (or a given date's) checkoff for a habit. Returns new done state + updated streaks.",
-    { habit_id: str(), date: optStr().describe("YYYY-MM-DD, defaults to today UTC") },
+    "Log a habit checkoff. Plain toggle by default; pass value (e.g. 8 glasses) and/or note for a measurable entry instead of toggling.",
+    {
+      habit_id: str(),
+      date: optStr().describe("YYYY-MM-DD, defaults to today UTC"),
+      value: z.number().min(0).optional().describe("measurable quantity; presence beats toggle"),
+      note: optStr(),
+    },
     async (a: ToolArgs) =>
-      run(() => api.post(`/v1/habits/${a.habit_id}/checkoffs`, { date: a.date ?? "" })),
+      run(() =>
+        api.post(`/v1/habits/${a.habit_id}/checkoffs`, {
+          date: a.date ?? "",
+          value: a.value,
+          note: a.note ?? "",
+        }),
+      ),
   );
 
   server.tool(
@@ -785,6 +804,29 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     "Backfill: re-run a categorization rule over ALL transactions (respects its pattern + amount window). Returns how many moved.",
     { rule_id: str() },
     async (a: ToolArgs) => run(() => api.post(`/v1/rules/${a.rule_id}/apply`)),
+  );
+
+  // ---------- Phase 12b: planner depth ----------
+
+  server.tool(
+    "parse_date",
+    "Parse natural-language dates ('tomorrow', 'fri at 7pm', 'in 3 days', '27 aug') into {date, time, iso}. Use before create_task when the user speaks casually.",
+    { q: str() },
+    async (a: ToolArgs) => run(() => api.get("/v1/planner/parse-date", { q: a.q })),
+  );
+
+  server.tool(
+    "skip_task",
+    "Advance a recurring task WITHOUT completing it: current instance is removed and the next one spawns in the same series.",
+    { id: str() },
+    async (a: ToolArgs) => run(() => api.post(`/v1/tasks/${a.id}/skip`)),
+  );
+
+  server.tool(
+    "delete_task",
+    "Hard-delete a task by id.",
+    { id: str() },
+    async (a: ToolArgs) => run(() => api.del(`/v1/tasks/${a.id}`)),
   );
 
 // ---------- Phase 9: agentic depth ----------

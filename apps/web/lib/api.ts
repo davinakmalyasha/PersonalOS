@@ -108,8 +108,10 @@ export type Task = {
   status: "todo" | "doing" | "done";
   priority: "low" | "med" | "high";
   due_date: string | null;
+  due_time: string | null;
   project: string | null;
   recurrence_rule: string | null;
+  series_id: string | null;
   parent_id: string | null;
   blocked_by: string | null;
   estimate_minutes: number | null;

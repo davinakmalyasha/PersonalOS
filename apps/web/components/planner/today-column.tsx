@@ -30,7 +30,10 @@ function TaskRow({
         <p className={`truncate text-sm ${done ? "text-muted-foreground line-through" : ""}`}>{task.title}</p>
         <div className="mt-1 flex flex-wrap items-center gap-1">
           {task.due_date && (
-            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">{task.due_date}</span>
+            <span className="font-mono text-[10px] tabular-nums text-muted-foreground">
+              {task.due_date}
+              {task.due_time ? ` ${task.due_time}` : ""}
+            </span>
           )}
           {task.priority !== "med" && (
             <Badge variant={task.priority === "high" ? "default" : "secondary"} className="text-[9px] uppercase">

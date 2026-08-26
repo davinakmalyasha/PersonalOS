@@ -89,6 +89,13 @@ export default function PlannerPage() {
         <div className="mx-auto flex max-w-6xl items-center justify-between px-6 py-3">
           <span className="text-sm font-semibold tracking-tight">Planner</span>
           <div className="flex items-center gap-2">
+            <a
+              href={`${process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080"}/v1/planner/calendar.ics`}
+              className="rounded-md border px-2 py-1 font-mono text-[10px] text-muted-foreground hover:text-foreground"
+              title="Subscribe from any calendar app"
+            >
+              .ics feed
+            </a>
             <Button size="sm" variant="ghost" onClick={() => monthShift(-1)}>
               ←
             </Button>

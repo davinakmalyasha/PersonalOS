@@ -704,6 +704,30 @@
         "responses": { "200": { "description": "ReviewBundle" }, "400": { "description": "bad date" } }
       }
     },
+    "/v1/planner/parse-date": {
+      "get": {
+        "operationId": "parseDate",
+        "summary": "Natural-language dates → {date, time?, iso?}: 'tomorrow', 'fri at 7pm', 'in 3 days', '27 aug'",
+        "parameters": [{ "name": "q", "in": "query", "required": true, "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "ParsedDate" }, "400": { "description": "unparseable / missing q" } }
+      }
+    },
+    "/v1/tasks/{id}/skip": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "skipTaskOccurrence",
+        "summary": "Advance a recurring task without completing it (current removed, next spawns in same series)",
+        "responses": { "200": { "description": "next Task" }, "400": { "description": "non-recurring task" }, "404": { "description": "missing" } }
+      }
+    },
+    "/v1/planner/calendar.ics": {
+      "get": {
+        "operationId": "calendarICS",
+        "summary": "Read-only iCalendar feed of events + dated open tasks (subscribe from any calendar app)",
+        "parameters": [{ "name": "days", "in": "query", "schema": { "type": "integer", "default": 90, "maximum": 365 } }],
+        "responses": { "200": { "description": "text/calendar attachment" } }
+      }
+    },
     "/v1/activity/feed": {
       "get": {
         "operationId": "activityFeed",

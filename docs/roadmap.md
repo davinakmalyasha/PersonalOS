@@ -186,6 +186,21 @@
 **Accepts:** three Netflix charges -> sync creates one active sub, second sync is idempotent; muting hides it from status=active; forecast projects the rent charge landing on its due date and alerts below threshold; safe-to-spend math matches components; backfill moves only rows inside the rule's amount window; liability account subtracts from net.
 
 ---
+## Phase 12b - Planner depth (DONE)
+
+**Features (reference-grounded: Todoist natural-language dates, TickTick calendar, Habitify measurable habits):**
+
+- Server-side natural-language date parser (`domain/planner/nldate.go`): today/tomorrow/next week/next month, weekday names, `in N days|weeks|months`, `27 aug`/`aug 27`, day-first slash dates, optional `@17:00` / `at 7pm` times -> `GET /planner/parse-date`
+- Tasks gain `due_time` (HH:MM, validated, clearable) for time-of-day scheduling
+- Recurring lineage: new instances carry `series_id` (seeded on first create); `POST /tasks/{id}/skip` advances a recurring task without completing it
+- Measurable habits: checkoffs accept `{value, note}` (upsert semantics); presence-based streaks unchanged; toggle still available
+- `GET /planner/calendar.ics?days=90` read-only iCalendar feed of events + dated open tasks
+- MCP: `parse_date`, `skip_task`, `delete_task` added; `create_task`/`update_task` expose recurrence/subtask/blocked/estimate/due_time; `check_habit` takes value/note (59 tools total)
+- Web: NL dates in task quick-add (type "fri" as the date), skip button + due-time chips in the tasks table, .ics feed link
+
+**Accepts:** "tomorrow at 7pm" parses to date+19:00+iso; invalid HH:MM rejected on create and patch; completing a recurring task spawns a same-series instance; skip leaves exactly one open instance in the series; measurable checkoff marks done without breaking the day list; ICS feed contains VEVENTs.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).

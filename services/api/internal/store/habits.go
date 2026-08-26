@@ -317,6 +317,31 @@ func (p *Planner) SetCheckoff(habitID, date string, done bool) error {
 	return err
 }
 
+// UpsertCheckoff logs (or replaces) a measurable entry: presence counts as a
+// done day for streaks; value is the quantity (e.g. 8 glasses), note free text.
+func (p *Planner) UpsertCheckoff(habitID, date string, value *float64, note string) error {
+	h, err := p.getHabitRaw(habitID)
+	if err != nil {
+		return err
+	}
+	var v interface{}
+	if value != nil {
+		if *value < 0 {
+			return ErrInvalid
+		}
+		v = *value
+	}
+	_, err = p.DB.Exec(`
+		INSERT INTO habit_checkoffs (id,habit_id,date,value,note,created_at)
+		VALUES (?,?,?,?,?,?)
+		ON CONFLICT(habit_id, date) DO UPDATE SET value=COALESCE(?,value), note=?`,
+		NewID(), habitID, date, v, note, NowRFC3339(), v, note)
+	if err == nil {
+		logChange(p.DB, "habit", habitID, "update", "logged: "+h.Name)
+	}
+	return err
+}
+
 func (p *Planner) getHabitRaw(id string) (Habit, error) {
 	var h Habit
 	err := p.DB.QueryRow(`SELECT `+habitCols+` FROM habits WHERE id=?`, id).

@@ -43,10 +43,23 @@ export function TasksTable({ onChanged }: { onChanged: () => void }) {
 
   const quickAdd = async () => {
     if (!title.trim()) return;
+    // Natural-language date support: anything not already YYYY-MM-DD goes
+    // through the server-side parser ("fri", "tomorrow", "in 3 days").
+    let dueDate = due;
+    if (due && !/^\d{4}-\d{2}-\d{2}$/.test(due)) {
+      try {
+        const parsed = await apiGet<{ date: string; time: string | null }>(
+          `/v1/planner/parse-date?q=${encodeURIComponent(due)}`,
+        );
+        dueDate = parsed.date;
+      } catch {
+        /* fall through with the raw value; API will reject if truly invalid */
+      }
+    }
     try {
       await apiSend("/v1/tasks", "POST", {
         title: title.trim(),
-        ...(due ? { due_date: due } : {}),
+        ...(dueDate ? { due_date: dueDate } : {}),
       });
       setTitle("");
       setDue("");
@@ -55,6 +68,12 @@ export function TasksTable({ onChanged }: { onChanged: () => void }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
+  };
+
+  const skipTask = async (t: Task) => {
+    await apiSend(`/v1/tasks/${t.id}/skip`, "POST");
+    await load();
+    onChanged();
   };
 
   const toggleDone = async (t: Task) => {
@@ -125,10 +144,11 @@ export function TasksTable({ onChanged }: { onChanged: () => void }) {
             className="h-8 flex-1"
           />
           <input
-            type="date"
+            type="text"
+            placeholder="date or 'fri', 'in 3 days'…"
             value={due}
             onChange={(e) => setDue(e.target.value)}
-            className="h-8 rounded-md border border-input bg-background px-2 font-mono text-xs"
+            className="h-8 w-44 rounded-md border border-input bg-background px-2 font-mono text-xs"
           />
           <Button size="sm" onClick={() => void quickAdd()}>
             Add
@@ -173,7 +193,10 @@ export function TasksTable({ onChanged }: { onChanged: () => void }) {
                         {t.priority}
                       </Badge>
                     </td>
-                    <td className="px-3 py-2 font-mono text-xs tabular-nums">{t.due_date ?? "—"}</td>
+                    <td className="px-3 py-2 font-mono text-xs tabular-nums">
+                      {t.due_date ?? "—"}
+                      {t.due_time && <span className="text-muted-foreground"> {t.due_time}</span>}
+                    </td>
                     <td className="px-3 py-2">
                       <Badge variant={t.status === "done" ? "secondary" : "outline"} className="text-[10px] uppercase">
                         {t.status}
@@ -181,6 +204,11 @@ export function TasksTable({ onChanged }: { onChanged: () => void }) {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
+                        {t.recurrence_rule && (
+                          <Button size="sm" variant="outline" className="h-6 px-2 text-xs" title="Skip this occurrence" onClick={() => void skipTask(t)}>
+                            Skip
+                          </Button>
+                        )}
                         <Button size="sm" variant="outline" className="h-6 px-2 text-xs" onClick={() => void toggleDone(t)}>
                           {t.status === "done" ? "Reopen" : "Done"}
                         </Button>
