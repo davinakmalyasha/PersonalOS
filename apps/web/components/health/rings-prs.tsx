@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Droplets } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -170,4 +170,90 @@ export function VolumeTable({ rows }: { rows: VolumeRow[] }) {
 
 export function todayRFC3339(): string {
   return `${todayStr()}T${new Date().toISOString().slice(11, 19)}Z`;
+}
+
+// ---- Targets + goal weight editor (PUT merge semantics) ----
+
+type EditableSettings = {
+  calorie_target: number | null;
+  protein_target_g: number | null;
+  carbs_target_g: number | null;
+  fat_target_g: number | null;
+  water_target_ml: number | null;
+  weekly_workout_target: number | null;
+  goal_weight_kg: number | null;
+};
+
+export function HealthSettingsCard({ settings, onChanged }: { settings?: HealthSettings | null; onChanged?: () => void }) {
+  const [form, setForm] = useState<Record<string, string>>({});
+  useEffect(() => {
+    if (!settings) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setForm({
+      calorie_target: settings.calorie_target?.toString() ?? "",
+      protein_target_g: settings.protein_target_g?.toString() ?? "",
+      carbs_target_g: settings.carbs_target_g?.toString() ?? "",
+      fat_target_g: settings.fat_target_g?.toString() ?? "",
+      water_target_ml: settings.water_target_ml?.toString() ?? "",
+      weekly_workout_target: settings.weekly_workout_target?.toString() ?? "",
+      goal_weight_kg: settings.goal_weight_kg?.toString() ?? "",
+    });
+  }, [settings]);
+  const [busy, setBusy] = useState(false);
+
+  const fields: { key: keyof EditableSettings; label: string }[] = [
+    { key: "calorie_target", label: "kcal/day" },
+    { key: "protein_target_g", label: "protein g" },
+    { key: "carbs_target_g", label: "carbs g" },
+    { key: "fat_target_g", label: "fat g" },
+    { key: "water_target_ml", label: "water ml" },
+    { key: "weekly_workout_target", label: "workouts/wk" },
+    { key: "goal_weight_kg", label: "goal kg" },
+  ];
+
+  const save = async () => {
+    setBusy(true);
+    try {
+      const body: Record<string, unknown> = {};
+      for (const f of fields) {
+        const raw = form[f.key]?.trim();
+        if (raw === "") continue; // untouched → keep stored value
+        const n = parseFloat(raw!);
+        if (!Number.isFinite(n)) continue;
+        body[f.key] = n;
+      }
+      await apiSend("/v1/health/settings", "PATCH", body);
+      onChanged?.();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Targets & goals</CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {fields.map((f) => (
+            <label key={f.key} className="space-y-0.5">
+              <span className="block text-[10px] uppercase tracking-wide text-muted-foreground">{f.label}</span>
+              <input
+                inputMode="decimal"
+                value={form[f.key] ?? ""}
+                onChange={(e) => setForm((s) => ({ ...s, [f.key]: e.target.value }))}
+                className="h-8 w-full rounded-md border border-input bg-background px-2 font-mono text-xs tabular-nums"
+              />
+            </label>
+          ))}
+        </div>
+        <div className="text-right">
+          <Button size="sm" variant="secondary" disabled={busy} onClick={() => void save()}>
+            Save targets
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
+  );
 }

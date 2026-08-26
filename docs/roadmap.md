@@ -201,6 +201,22 @@
 **Accepts:** "tomorrow at 7pm" parses to date+19:00+iso; invalid HH:MM rejected on create and patch; completing a recurring task spawns a same-series instance; skip leaves exactly one open instance in the series; measurable checkoff marks done without breaking the day list; ICS feed contains VEVENTs.
 
 ---
+## Phase 12c - Health depth (DONE)
+
+**Features (reference-grounded: Hevy exercise library/routines/1RM, MyFitnessPal food DB, Cronometer):**
+
+- Seeded **exercise library** (`exercises`: name/muscle_group/equipment; 33 movements) with search + taxonomy filters — logged sets can now be normalized against it
+- **Routines** (workout templates): CRUD with ordered `routine_exercises` (sets + target reps); `POST /routines/{id}/start` copies the template into a fresh workout
+- **Personal food database**: upsert-by-name with merge semantics (0/empty keeps stored values); `POST /foods/{id}/log {servings}` creates a meal with scaled calories/macros
+- Meals gain a **slot** (breakfast|lunch|dinner|snack); recipes now carry macros into meals correctly via the widened CreateMeal path
+- PRs gain **estimated 1RM** (Epley) tracked alongside max weight; summary computes **weekly workout-target progress** (`week_workouts_done/target/pct`, Mon-based) and carries **goal_weight_kg**
+- `GET /health/macros-series` per-day macro history for ring trends
+- MCP: `exercise_library`, `manage_routines`, `manage_foods` added (62 tools total)
+- Web: inline Targets & goals editor on the health page
+
+**Accepts:** squat search returns 3 seeded variants with taxonomy; starting Push A materializes 6 sets in one workout; logging 1.5 servings of Nasi Ayam yields 975 kcal / 63g protein / slot=lunch; partial food upserts do not wipe macros; weekly progress shows 1/4 = 25% after one workout.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).

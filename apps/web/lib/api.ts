@@ -308,6 +308,7 @@ export type HealthSettings = {
   fat_target_g: number | null;
   water_target_ml: number | null;
   weekly_workout_target: number | null;
+  goal_weight_kg: number | null;
   updated_at: string;
 };
 

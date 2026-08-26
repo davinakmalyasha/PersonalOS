@@ -218,7 +218,7 @@ func (h *Health) UseRecipeAsMeal(id, eatenAt string, servings *int64) (Meal, err
 		cal = &c
 	}
 	title := fmt.Sprintf("%s (from recipe)", r.Title)
-	return h.CreateMeal(eatenAt, title, "", string(r.Ingredients), cal, nil, nil, nil, r.Tags)
+	return h.CreateMeal(eatenAt, title, "", string(r.Ingredients), cal, nil, nil, nil, r.Tags, "")
 }
 
 // ---- Grocery list ----

@@ -7,7 +7,7 @@ import { WeightChart } from "@/components/health/weight-chart";
 import { WorkoutBars } from "@/components/health/workout-bars";
 import { GroceryChecklist } from "@/components/health/grocery-checklist";
 import { RecentLog } from "@/components/health/recent-log";
-import { MacroRings, PRTable, VolumeTable, WaterButton } from "@/components/health/rings-prs";
+import { MacroRings, PRTable, VolumeTable, WaterButton, HealthSettingsCard } from "@/components/health/rings-prs";
 import {
   apiGet,
   apiSend,
@@ -191,6 +191,8 @@ export default function HealthPage() {
           <PRTable prs={prs} />
           <VolumeTable rows={volume} />
         </div>
+
+        <HealthSettingsCard settings={summary?.settings ?? null} onChanged={() => void reload()} />
 
         {Object.keys(trends).length > 0 && (
           <Card>

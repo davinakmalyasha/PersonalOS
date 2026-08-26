@@ -53,6 +53,7 @@ type Meal struct {
 	ProteinG *float64        `json:"protein_g"`
 	CarbsG   *float64        `json:"carbs_g"`
 	FatG     *float64        `json:"fat_g"`
+	Slot     *string          `json:"slot"` 		// breakfast|lunch|dinner|snack (12c)
 	Tags     []string        `json:"tags"`
 	CreatedAt string         `json:"created_at"`
 	UpdatedAt string         `json:"updated_at"`
@@ -60,11 +61,11 @@ type Meal struct {
 	tagsRaw string
 }
 
-const mealCols = `id,eaten_at,title,notes,items,calories,protein_g,carbs_g,fat_g,tags,created_at,updated_at`
+const mealCols = `id,eaten_at,title,notes,items,calories,protein_g,carbs_g,fat_g,slot,tags,created_at,updated_at`
 
 func mealScan(m *Meal, tagsRaw *string) []interface{} {
 	return []interface{}{&m.ID, &m.EatenAt, &m.Title, &m.Notes, &m.Items,
-		&m.Calories, &m.ProteinG, &m.CarbsG, &m.FatG, tagsRaw, &m.CreatedAt, &m.UpdatedAt}
+		&m.Calories, &m.ProteinG, &m.CarbsG, &m.FatG, &m.Slot, tagsRaw, &m.CreatedAt, &m.UpdatedAt}
 }
 
 type MealFilter struct {
@@ -74,11 +75,16 @@ type MealFilter struct {
 	PageSize int
 }
 
-func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *int64, proteinG, carbsG, fatG *float64, tags []string) (Meal, error) {
+var mealSlots = map[string]bool{"breakfast": true, "lunch": true, "dinner": true, "snack": true}
+
+func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *int64, proteinG, carbsG, fatG *float64, tags []string, slot string) (Meal, error) {
 	if !validRFC3339(eatenAt) || strings.TrimSpace(title) == "" {
 		return Meal{}, ErrInvalid
 	}
 	if !validJSONArray(itemsJSON) {
+		return Meal{}, ErrInvalid
+	}
+	if slot != "" && !mealSlots[slot] {
 		return Meal{}, ErrInvalid
 	}
 	if calories != nil && *calories < 0 {
@@ -96,13 +102,17 @@ func (h *Health) CreateMeal(eatenAt, title, notes, itemsJSON string, calories *i
 		ProteinG: proteinG, CarbsG: carbsG, FatG: fatG,
 		Tags: normalizeTagList(tags), CreatedAt: now, UpdatedAt: now,
 	}
+	if slot != "" {
+		s := slot
+		m.Slot = &s
+	}
 	var cal interface{}
 	if calories != nil {
 		cal = *calories
 	}
 	_, err := h.DB.Exec(
-		`INSERT INTO meals (`+mealCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-		m.ID, m.EatenAt, m.Title, m.Notes, m.Items, cal, m.ProteinG, m.CarbsG, m.FatG,
+		`INSERT INTO meals (`+mealCols+`) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		m.ID, m.EatenAt, m.Title, m.Notes, m.Items, cal, m.ProteinG, m.CarbsG, m.FatG, m.Slot,
 		joinTags(m.Tags), m.CreatedAt, m.UpdatedAt)
 	if err != nil {
 		return Meal{}, err
@@ -195,6 +205,7 @@ type MealUpdate struct {
 	ProteinG **float64 // same convention
 	CarbsG   **float64
 	FatG     **float64
+	Slot     **string // ptr-to-nil clears; ptr-to-"breakfast|lunch|dinner|snack" sets
 	Tags     *[]string
 }
 
@@ -247,6 +258,16 @@ func (h *Health) UpdateMeal(id string, u MealUpdate) (Meal, error) {
 			*f.dest = &v
 		}
 	}
+	if u.Slot != nil {
+		if *u.Slot == nil || **u.Slot == "" {
+			cur.Slot = nil
+		} else if !mealSlots[**u.Slot] {
+			return Meal{}, ErrInvalid
+		} else {
+			v := **u.Slot
+			cur.Slot = &v
+		}
+	}
 	if u.Tags != nil {
 		cur.Tags = normalizeTagList(*u.Tags)
 	}
@@ -256,9 +277,13 @@ func (h *Health) UpdateMeal(id string, u MealUpdate) (Meal, error) {
 	if cur.Calories != nil {
 		cal = *cur.Calories
 	}
+	var slotV interface{}
+	if cur.Slot != nil {
+		slotV = *cur.Slot
+	}
 	_, err = h.DB.Exec(
-		`UPDATE meals SET eaten_at=?, title=?, notes=?, items=?, calories=?, protein_g=?, carbs_g=?, fat_g=?, tags=?, updated_at=? WHERE id=?`,
-		cur.EatenAt, cur.Title, cur.Notes, cur.Items, cal, cur.ProteinG, cur.CarbsG, cur.FatG,
+		`UPDATE meals SET eaten_at=?, title=?, notes=?, items=?, calories=?, protein_g=?, carbs_g=?, fat_g=?, slot=?, tags=?, updated_at=? WHERE id=?`,
+		cur.EatenAt, cur.Title, cur.Notes, cur.Items, cal, cur.ProteinG, cur.CarbsG, cur.FatG, slotV,
 		joinTags(cur.Tags), cur.UpdatedAt, id)
 	if err != nil {
 		return Meal{}, err

@@ -829,6 +829,102 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     async (a: ToolArgs) => run(() => api.del(`/v1/tasks/${a.id}`)),
   );
 
+  // ---------- Phase 12c: health depth ----------
+
+  server.tool(
+    "exercise_library",
+    "Search the seeded exercise library (name/muscle group/equipment). Use it to keep workout logs consistent instead of inventing names.",
+    {
+      q: optStr(),
+      muscle: optStr().describe("chest|back|legs|shoulders|biceps|triceps|core|cardio…"),
+      equipment: optStr().describe("barbell|dumbbell|machine|bodyweight…"),
+      limit: intOpt(),
+    },
+    async (a: ToolArgs) => run(() => api.get("/v1/exercises", a)),
+  );
+
+  server.tool(
+    "manage_routines",
+    "Workout templates. action=list|create|delete|start — start copies the routine into today's workout log.",
+    {
+      action: z.enum(["list", "create", "delete", "start"]).optional().default("list"),
+      id: optStr().describe("delete/start"),
+      name: optStr().describe("create"),
+      notes: optStr(),
+      exercises: z
+        .array(z.object({ name: str(), sets: z.number().int().min(1).optional(), target_reps: z.number().int().min(1).optional() }))
+        .optional()
+        .describe("create: ordered movements"),
+      performed_at: optStr().describe("start: RFC3339, default now"),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "create": {
+          if (!a.name) throw new Error("name required");
+          const exs = (a.exercises as Array<{ name: string; sets?: number; target_reps?: number }> | undefined) ?? [];
+          return run(() =>
+            api.post("/v1/routines", {
+              name: a.name,
+              notes: a.notes ?? "",
+              exercises: exs.map((e) => ({ name: e.name, sets: e.sets ?? 3, target_reps: e.target_reps ?? 10 })),
+            }),
+          );
+        }
+        case "delete":
+          return run(() => api.del(`/v1/routines/${a.id}`));
+        case "start":
+          return run(() => api.post(`/v1/routines/${a.id}/start`, { performed_at: a.performed_at ?? null }));
+        default:
+          return run(() => api.get("/v1/routines", { q: a.q }));
+      }
+    },
+  );
+
+  server.tool(
+    "manage_foods",
+    "Personal food database with per-serving macros. action=search|upsert|log — log creates a meal from food × servings.",
+    {
+      action: z.enum(["search", "upsert", "log"]).optional().default("search"),
+      id: optStr().describe("log"),
+      q: optStr().describe("search"),
+      name: optStr().describe("upsert"),
+      serving_desc: optStr(),
+      calories: z.number().int().min(0).optional(),
+      protein_g: z.number().min(0).optional(),
+      carbs_g: z.number().min(0).optional(),
+      fat_g: z.number().min(0).optional(),
+      servings: z.number().min(0).max(50).optional().describe("log, default 1"),
+      eaten_at: optStr().describe("log: RFC3339, default now"),
+      slot: z.enum(["breakfast", "lunch", "dinner", "snack"]).optional(),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "upsert":
+          if (!a.name) throw new Error("name required");
+          return run(() =>
+            api.put("/v1/foods", {
+              name: a.name,
+              serving_desc: a.serving_desc ?? "",
+              calories: a.calories ?? 0,
+              protein_g: a.protein_g ?? 0,
+              carbs_g: a.carbs_g ?? 0,
+              fat_g: a.fat_g ?? 0,
+            }),
+          );
+        case "log":
+          return run(() =>
+            api.post(`/v1/foods/${a.id}/log`, {
+              servings: a.servings ?? 1,
+              eaten_at: a.eaten_at ?? null,
+              slot: a.slot ?? null,
+            }),
+          );
+        default:
+          return run(() => api.get("/v1/foods", { q: a.q }));
+      }
+    },
+  );
+
 // ---------- Phase 9: agentic depth ----------
 
   server.tool(

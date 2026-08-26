@@ -417,6 +417,11 @@ type HealthSummary struct {
 	CaloriesToday *int64          `json:"calories_today,omitempty"`
 	WaterTodayMl  *int64          `json:"water_today_ml,omitempty"`
 	Settings      *HealthSettings `json:"settings,omitempty"` // targets for the rings
+
+	// Weekly workout target progress (current ISO week, Mon-based).
+	WeekWorkoutsDone    int     `json:"week_workouts_done"`
+	WeekWorkoutTarget   int     `json:"week_workout_target,omitempty"`
+	WeekTargetPct       int     `json:"week_target_pct,omitempty"`
 }
 
 type WorkoutsRollup struct {
@@ -546,5 +551,28 @@ func (h *Health) Summary(from, to string) (HealthSummary, error) {
 		w := water.Int64
 		s.WaterTodayMl = &w
 	}
+
+	// Weekly workout target progress (Mon-based current week).
+	if s.Settings != nil && s.Settings.WeeklyWorkoutTarget != nil {
+		target := int(*s.Settings.WeeklyWorkoutTarget)
+		monday := mondayOf(time.Now().UTC()).Format("2006-01-02")
+		var done int
+		if err := h.DB.QueryRow(
+			`SELECT COUNT(*) FROM workouts WHERE performed_at>=?`, monday+"T00:00:00Z").Scan(&done); err == nil {
+			s.WeekWorkoutsDone = done
+			s.WeekWorkoutTarget = target
+			pct := 100
+			if done < target {
+				pct = done * 100 / target
+			}
+			s.WeekTargetPct = pct
+		}
+	}
 	return s, nil
+}
+
+func mondayOf(t time.Time) time.Time {
+	day := t.UTC()
+	offset := (int(day.Weekday()) + 6) % 7 // Mon=0 … Sun=6
+	return day.AddDate(0, 0, -offset)
 }

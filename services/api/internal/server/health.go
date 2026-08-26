@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/store"
 	"github.com/go-chi/chi/v5"
@@ -53,6 +54,23 @@ func (s *Server) mountHealth(r chi.Router) {
 	r.Put("/health/settings", s.handleUpdateHealthSettings)
 	r.Patch("/health/settings", s.handleUpdateHealthSettings)
 	r.Get("/body-metrics/trends", s.handleMeasurementTrends)
+	r.Get("/health/macros-series", s.handleMacroSeries)
+
+	r.Route("/exercises", func(r chi.Router) {
+		r.Get("/", s.handleListExercises)
+	})
+	r.Route("/routines", func(r chi.Router) {
+		r.Post("/", s.handleCreateRoutine)
+		r.Get("/", s.handleListRoutines)
+		r.Get("/{id}", s.handleGetRoutine)
+		r.Delete("/{id}", s.handleDeleteRoutine)
+		r.Post("/{id}/start", s.handleStartRoutine)
+	})
+	r.Route("/foods", func(r chi.Router) {
+		r.Put("/", s.handleUpsertFood)
+		r.Get("/", s.handleListFoods)
+	})
+	r.Post("/foods/{id}/log", s.handleLogFromFood)
 }
 
 func (s *Server) requireHealth(w http.ResponseWriter) (*store.Health, bool) {
@@ -74,6 +92,7 @@ type mealReq struct {
 	ProteinG *float64        `json:"protein_g"`
 	CarbsG   *float64        `json:"carbs_g"`
 	FatG     *float64        `json:"fat_g"`
+	Slot     string          `json:"slot"` // breakfast|lunch|dinner|snack
 	Tags     []string        `json:"tags"`
 }
 
@@ -102,7 +121,7 @@ func (s *Server) handleCreateMeal(w http.ResponseWriter, r *http.Request) {
 	if req.Items != nil {
 		items = string(req.Items)
 	}
-	m, err := h.CreateMeal(req.EatenAt, req.Title, req.Notes, items, req.Calories, req.ProteinG, req.CarbsG, req.FatG, req.Tags)
+	m, err := h.CreateMeal(req.EatenAt, req.Title, req.Notes, items, req.Calories, req.ProteinG, req.CarbsG, req.FatG, req.Tags, req.Slot)
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
 			fail(w, http.StatusBadRequest, "invalid fields",
@@ -162,6 +181,7 @@ type mealPatch struct {
 	ProteinG **float64        `json:"protein_g"`
 	CarbsG   **float64        `json:"carbs_g"`
 	FatG     **float64        `json:"fat_g"`
+	Slot     **string         `json:"slot"`
 	Tags     *[]string        `json:"tags"`
 }
 
@@ -184,7 +204,7 @@ func (s *Server) handleUpdateMeal(w http.ResponseWriter, r *http.Request) {
 		EatenAt: req.EatenAt, Title: req.Title, Notes: req.Notes,
 		Items: itemsStr, Calories: req.Calories,
 		ProteinG: req.ProteinG, CarbsG: req.CarbsG, FatG: req.FatG,
-		Tags: req.Tags,
+		Slot: req.Slot, Tags: req.Tags,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
@@ -777,6 +797,7 @@ func (s *Server) handleUpdateHealthSettings(w http.ResponseWriter, r *http.Reque
 		CalorieTarget: req.CalorieTarget, ProteinTargetG: req.ProteinTargetG,
 		CarbsTargetG: req.CarbsTargetG, FatTargetG: req.FatTargetG,
 		WaterTargetMl: req.WaterTargetMl, WeeklyWorkoutTarget: req.WeeklyWorkoutTarget,
+		GoalWeightKg: req.GoalWeightKg,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
@@ -788,4 +809,214 @@ func (s *Server) handleUpdateHealthSettings(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	writeJSON(w, http.StatusOK, settings)
+}
+
+// ---- Phase 12c: library, routines, foods, macro history ----
+
+func (s *Server) handleListExercises(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := queryInt(r, "limit")
+	items, err := h.ListExercises(q.Get("q"), q.Get("muscle"), q.Get("equipment"), int(limit))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+type routineExerciseReq struct {
+	Name       string `json:"name"`
+	Sets       int    `json:"sets"`
+	TargetReps int    `json:"target_reps"`
+}
+
+func (s *Server) handleCreateRoutine(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Name      string                 `json:"name"`
+		Notes     string                 `json:"notes"`
+		Tags      []string               `json:"tags"`
+		Exercises []routineExerciseReq   `json:"exercises"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	exs := make([]store.RoutineExercise, len(req.Exercises))
+	for i, e := range req.Exercises {
+		exs[i] = store.RoutineExercise{Position: i, Name: e.Name, Sets: e.Sets, TargetReps: e.TargetReps}
+	}
+	routine, err := h.CreateRoutine(req.Name, req.Notes, req.Tags, exs)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "name required")
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, routine)
+}
+
+func (s *Server) handleListRoutines(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	items, err := h.ListRoutines(r.URL.Query().Get("q"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+func (s *Server) handleGetRoutine(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	routine, err := h.GetRoutine(chiURLParam(r, "id"))
+	if err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, routine)
+}
+
+func (s *Server) handleDeleteRoutine(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	if err := h.DeleteRoutine(chiURLParam(r, "id")); err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /routines/{id}/start {performed_at?} — copy into a logged workout.
+func (s *Server) handleStartRoutine(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		PerformedAt string `json:"performed_at"`
+	}
+	if decodeJSON(r, &req, 0) != nil {
+		// body optional for start
+	}
+	if req.PerformedAt == "" {
+		req.PerformedAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	if _, err := time.Parse(time.RFC3339, req.PerformedAt); err != nil {
+		fail(w, http.StatusBadRequest, "performed_at must be RFC3339")
+		return
+	}
+	wk, err := h.StartRoutine(chiURLParam(r, "id"), req.PerformedAt)
+	if err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, wk)
+}
+
+func (s *Server) handleUpsertFood(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	var req store.Food
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	food, err := h.UpsertFood(store.Food{Name: req.Name, ServingDesc: req.ServingDesc,
+		Calories: req.Calories, ProteinG: req.ProteinG, CarbsG: req.CarbsG, FatG: req.FatG})
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid food", fieldError{"name/macros", "name required; values >= 0"})
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, food)
+}
+
+func (s *Server) handleListFoods(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	limit, _ := queryInt(r, "limit")
+	items, err := h.ListFoods(q.Get("q"), int(limit))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+// POST /foods/{id}/log {servings?, eaten_at?, slot?} — meal from library food.
+func (s *Server) handleLogFromFood(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	var req struct {
+		Servings float64 `json:"servings"`
+		EatenAt  string  `json:"eaten_at"`
+		Slot     string  `json:"slot"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	if req.Servings == 0 {
+		req.Servings = 1
+	}
+	if req.EatenAt == "" {
+		req.EatenAt = time.Now().UTC().Format(time.RFC3339)
+	}
+	m, err := h.LogMealFromFood(chiURLParam(r, "id"), req.Servings, req.EatenAt, req.Slot)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) || errors.Is(err, store.ErrNotFound) {
+			fail(w, http.StatusBadRequest, "bad servings/eaten_at or unknown food id")
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusCreated, m)
+}
+
+func (s *Server) handleMacroSeries(w http.ResponseWriter, r *http.Request) {
+	h, ok := s.requireHealth(w)
+	if !ok {
+		return
+	}
+	q := r.URL.Query()
+	points, err := h.MacroSeries(q.Get("from"), q.Get("to"))
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"points": points})
 }

@@ -15,8 +15,9 @@ type HealthSettings struct {
 	CarbsTargetG         *int64 `json:"carbs_target_g"`
 	FatTargetG           *int64 `json:"fat_target_g"`
 	WaterTargetMl        *int64 `json:"water_target_ml"`
-	WeeklyWorkoutTarget  *int64 `json:"weekly_workout_target"` // 1..14 sessions/week
-	UpdatedAt            string `json:"updated_at"`
+	WeeklyWorkoutTarget  *int64   `json:"weekly_workout_target"` // 1..14 sessions/week
+	GoalWeightKg         *float64 `json:"goal_weight_kg"`
+	UpdatedAt            string   `json:"updated_at"`
 }
 
 const healthSettingsID = "default"
@@ -25,11 +26,12 @@ const healthSettingsID = "default"
 func (h *Health) GetSettings() (HealthSettings, error) {
 	var s HealthSettings
 	var cal, prot, carbs, fat, water, wk sql.NullInt64
+	var gw sql.NullFloat64
 	err := h.DB.QueryRow(`
 		SELECT calorie_target,protein_target_g,carbs_target_g,fat_target_g,
-		       water_target_ml,weekly_workout_target,updated_at
+		       water_target_ml,weekly_workout_target,goal_weight_kg,updated_at
 		FROM health_settings WHERE id=?`, healthSettingsID).
-		Scan(&cal, &prot, &carbs, &fat, &water, &wk, &s.UpdatedAt)
+		Scan(&cal, &prot, &carbs, &fat, &water, &wk, &gw, &s.UpdatedAt)
 	if err == sql.ErrNoRows {
 		return HealthSettings{}, nil // fresh install: defaults, no row yet
 	}
@@ -42,6 +44,10 @@ func (h *Health) GetSettings() (HealthSettings, error) {
 	s.FatTargetG = nullIntPtr(fat)
 	s.WaterTargetMl = nullIntPtr(water)
 	s.WeeklyWorkoutTarget = nullIntPtr(wk)
+	if gw.Valid {
+		v := gw.Float64
+		s.GoalWeightKg = &v
+	}
 	return s, nil
 }
 
@@ -53,8 +59,8 @@ func nullIntPtr(n sql.NullInt64) *int64 {
 	return &v
 }
 
-// UpdateSettings upserts the singleton row; omitted fields are left unchanged
-// via COALESCE-style merge on pointers.
+// UpdateSettings upserts the singleton row; provided fields win, others keep
+// their stored values (merge semantics).
 func (h *Health) UpdateSettings(u HealthSettings) (HealthSettings, error) {
 	if u.WeeklyWorkoutTarget != nil && (*u.WeeklyWorkoutTarget < 1 || *u.WeeklyWorkoutTarget > 14) {
 		return HealthSettings{}, ErrInvalid
@@ -64,10 +70,13 @@ func (h *Health) UpdateSettings(u HealthSettings) (HealthSettings, error) {
 			return HealthSettings{}, ErrInvalid
 		}
 	}
+	if u.GoalWeightKg != nil && *u.GoalWeightKg <= 0 {
+		return HealthSettings{}, ErrInvalid
+	}
 	now := NowRFC3339()
 	_, err := h.DB.Exec(`
-		INSERT INTO health_settings (id,calorie_target,protein_target_g,carbs_target_g,fat_target_g,water_target_ml,weekly_workout_target,updated_at)
-		VALUES (?,?,?,?,?,?,?,?)
+		INSERT INTO health_settings (id,calorie_target,protein_target_g,carbs_target_g,fat_target_g,water_target_ml,weekly_workout_target,goal_weight_kg,updated_at)
+		VALUES (?,?,?,?,?,?,?,?,?)
 		ON CONFLICT(id) DO UPDATE SET
 			calorie_target=COALESCE(?,calorie_target),
 			protein_target_g=COALESCE(?,protein_target_g),
@@ -75,11 +84,12 @@ func (h *Health) UpdateSettings(u HealthSettings) (HealthSettings, error) {
 			fat_target_g=COALESCE(?,fat_target_g),
 			water_target_ml=COALESCE(?,water_target_ml),
 			weekly_workout_target=COALESCE(?,weekly_workout_target),
+			goal_weight_kg=COALESCE(?,goal_weight_kg),
 			updated_at=?`,
 		healthSettingsID, u.CalorieTarget, u.ProteinTargetG, u.CarbsTargetG,
-		u.FatTargetG, u.WaterTargetMl, u.WeeklyWorkoutTarget, now,
+		u.FatTargetG, u.WaterTargetMl, u.WeeklyWorkoutTarget, u.GoalWeightKg, now,
 		u.CalorieTarget, u.ProteinTargetG, u.CarbsTargetG,
-		u.FatTargetG, u.WaterTargetMl, u.WeeklyWorkoutTarget, now)
+		u.FatTargetG, u.WaterTargetMl, u.WeeklyWorkoutTarget, u.GoalWeightKg, now)
 	if err != nil {
 		return HealthSettings{}, err
 	}

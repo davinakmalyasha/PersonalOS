@@ -50,7 +50,19 @@ type ExercisePR struct {
 	Exercise      string  `json:"exercise"`
 	MaxWeightKg   float64 `json:"max_weight_kg"`
 	BestRepsAtMax int     `json:"best_reps_at_max"`
+	EstOneRMKg    float64 `json:"est_one_rm_kg"` // Epley: w × (1 + reps/30)
 	LastDate      string  `json:"last_date"`
+}
+
+// EstimateOneRM computes the Epley estimated one-rep max.
+func EstimateOneRM(weight float64, reps int) float64 {
+	if reps <= 0 || weight <= 0 {
+		return weight
+	}
+	if reps == 1 {
+		return weight
+	}
+	return weight * (1 + float64(reps)/30.0)
 }
 
 // ExercisePRs computes the heaviest set per exercise name within [from,to]
@@ -91,13 +103,21 @@ func (h *Health) ExercisePRs(from, to string) ([]ExercisePR, error) {
 			if s.Reps != nil {
 				reps = *s.Reps
 			}
+			oneRM := EstimateOneRM(w, reps)
 			cur, ok := best[key]
 			if !ok || w > cur.MaxWeightKg {
-				best[key] = ExercisePR{Exercise: name, MaxWeightKg: w, BestRepsAtMax: reps, LastDate: day}
+				best[key] = ExercisePR{Exercise: name, MaxWeightKg: w, BestRepsAtMax: reps, EstOneRMKg: oneRM, LastDate: day}
 			} else if w == cur.MaxWeightKg {
 				if reps > cur.BestRepsAtMax {
 					cur.BestRepsAtMax = reps
 				}
+				if oneRM > cur.EstOneRMKg {
+					cur.EstOneRMKg = oneRM
+				}
+				cur.LastDate = day
+				best[key] = cur
+			} else if oneRM > cur.EstOneRMKg {
+				cur.EstOneRMKg = oneRM
 				cur.LastDate = day
 				best[key] = cur
 			}
