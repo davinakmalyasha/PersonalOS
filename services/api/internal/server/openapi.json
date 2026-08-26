@@ -691,6 +691,13 @@
         "responses": { "200": { "description": "{base, rates}" }, "400": { "description": "validation" } }
       }
     },
+    "/v1/export/vault.zip": {
+      "get": {
+        "operationId": "exportVaultZip",
+        "summary": "Markdown vault export: notes/, bookmarks/, readings/ (mirrored items with front matter) + highlights/ (with review state) + INDEX.md. Wiki-links preserved.",
+        "responses": { "200": { "description": "application/zip attachment" } }
+      }
+    },
     "/v1/events/import.ics": {
       "post": {
         "operationId": "importICS",

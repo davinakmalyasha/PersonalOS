@@ -65,6 +65,9 @@ func (s *Server) mountExtras(r chi.Router) {
 
 	// Phase 13c: ICS import.
 	r.Post("/events/import.ics", s.handleImportICS)
+
+	// Phase 13d: markdown vault export.
+	r.Get("/export/vault.zip", s.handleExportVault)
 }
 
 // ---- Goals ----

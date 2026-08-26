@@ -273,6 +273,18 @@
 **Accepts:** importing the same file twice yields `{imported: 2, skipped: 0}` then `{imported: 0, skipped: 2}`; events appear in `/events` windows with the `ics` tag.
 
 ---
+## Phase 13d - Markdown vault export (DONE)
+
+**Features:**
+
+- `GET /v1/export/vault.zip` streams the knowledge base as an Obsidian-style folder: `notes/`, `bookmarks/`, `readings/` (all mirrored items, archived included) plus `highlights/` (native records with SM-2 review state)
+- Every file carries YAML-ish front matter (id, type, quoted title, tags, pinned/archived, source, scalar `data` fields flattened alphabetically, created/updated); bodies keep `[[wiki-links]]` verbatim
+- Highlights render as blockquotes with the reading title in front matter and any note below; `INDEX.md` lists per-folder counts and the export timestamp
+- File names are `<slugified-title>-<id8>.md` (40-char slug, collision-safe via id suffix); no new MCP tool (binary download is a browser/curl job) — 67 tools total
+
+**Accepts:** a fresh DB with one note, bookmark, reading + highlight exports a zip containing exactly those files with correct front matter, preserved wiki-link, blockquoted quote, and a truthful INDEX.md.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).
