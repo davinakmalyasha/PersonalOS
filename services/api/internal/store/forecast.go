@@ -35,9 +35,13 @@ func (f *Finance) Forecast(days int) (Forecast, error) {
 	if err != nil {
 		return out, err
 	}
+	fx, ferr := f.loadRates()
+	if ferr != nil {
+		return out, err
+	}
 	var opening int64
 	for _, a := range accounts {
-		opening += a.BalanceMinor
+		opening += fx.toBase(a.Currency, a.BalanceMinor)
 	}
 
 	// Smoothed daily net over trailing 90 days (transfers excluded).

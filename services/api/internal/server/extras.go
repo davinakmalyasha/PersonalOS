@@ -1,4 +1,4 @@
-﻿package server
+package server
 
 import (
 	"errors"
@@ -51,6 +51,11 @@ func (s *Server) mountExtras(r chi.Router) {
 	r.Post("/finance/subscriptions/sync", s.handleSyncSubscriptions)
 	r.Get("/finance/safe-to-spend", s.handleSafeToSpend)
 	r.Get("/finance/forecast", s.handleForecast)
+	r.Route("/finance/fx", func(r chi.Router) {
+		r.Get("/", s.handleListRates)
+		r.Put("/", s.handleUpsertRate)
+		r.Put("/base", s.handleSetBaseCurrency)
+	})
 	r.Get("/transactions/export.csv", s.handleExportTransactionsCSV)
 }
 
@@ -535,4 +540,60 @@ func boolStr(b bool) string {
 		return "true"
 	}
 	return "false"
+}
+// ---- Phase 13a: fx rates ----
+
+func (s *Server) handleListRates(w http.ResponseWriter, r *http.Request) {
+	out := map[string]interface{}{
+		"base": s.finance.BaseCurrency(),
+	}
+	rates, err := s.finance.ListRates()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	out["rates"] = rates
+	writeJSON(w, http.StatusOK, out)
+}
+
+// PUT /finance/fx {code, rate_to_base} — 1 unit of code = N base units.
+func (s *Server) handleUpsertRate(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Code       string  `json:"code"`
+		RateToBase float64 `json:"rate_to_base"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	rate, err := s.finance.UpsertRate(req.Code, req.RateToBase)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid rate", fieldError{"code/rate_to_base", "non-empty code; positive rate"})
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, rate)
+}
+
+// PUT /finance/fx/base {code}
+func (s *Server) handleSetBaseCurrency(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Code string `json:"code"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	if err := s.finance.SetBaseCurrency(req.Code); err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid base currency code")
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"base": s.finance.BaseCurrency()})
 }

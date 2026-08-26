@@ -56,11 +56,16 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 		return nil, err
 	}
 	s := &MonthSummary{Month: month, ByCategory: []CategorySpen{}, BudgetLines: []BudgetLine{}}
+	// fxExpr: transaction amounts converted to the base currency at report
+	// time. Unknown/absent rates pass through 1:1.
+	fxExpr := "CAST(t.amount AS REAL) * COALESCE(er.rate_to_base, 1)"
+	txJoin := "LEFT JOIN exchange_rates er ON er.code = t.currency"
 
 	err = f.DB.QueryRow(`
-		SELECT COALESCE(SUM(CASE WHEN amount>0 THEN amount ELSE 0 END),0),
-		       COALESCE(SUM(CASE WHEN amount<0 THEN -amount ELSE 0 END),0)
-		FROM transactions WHERE date>=? AND date<? AND is_transfer=0`, start, end).
+		SELECT CAST(COALESCE(SUM(CASE WHEN `+fxExpr+`>0 THEN `+fxExpr+` ELSE 0 END),0) AS INTEGER),
+		       CAST(COALESCE(SUM(CASE WHEN `+fxExpr+`<0 THEN -`+fxExpr+` ELSE 0 END),0) AS INTEGER)
+		FROM transactions t `+txJoin+`
+		WHERE t.date>=? AND t.date<? AND t.is_transfer=0`, start, end).
 		Scan(&s.Income, &s.Outcome)
 	if err != nil {
 		return nil, err
@@ -68,8 +73,8 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 	s.Net = s.Income - s.Outcome
 
 	rows, err := f.DB.Query(`
-		SELECT t.category_id, c.name, SUM(-t.amount) AS spent
-		FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
+		SELECT t.category_id, c.name, CAST(SUM(-(`+fxExpr+`)) AS INTEGER) AS spent
+		FROM transactions t `+txJoin+` LEFT JOIN categories c ON c.id=t.category_id
 		WHERE t.date>=? AND t.date<? AND t.amount<0 AND t.is_transfer=0
 		GROUP BY t.category_id ORDER BY spent DESC`, start, end)
 	if err != nil {
@@ -144,7 +149,7 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 	}
 	for _, b := range budgetRows {
 		var spent int64
-		_ = f.DB.QueryRow(`SELECT COALESCE(SUM(-amount),0) FROM transactions WHERE category_id=? AND date>=? AND date<? AND is_transfer=0`,
+		_ = f.DB.QueryRow(`SELECT CAST(COALESCE(SUM(-(`+fxExpr+`)),0) AS INTEGER) FROM transactions t `+txJoin+` WHERE t.category_id=? AND t.date>=? AND t.date<? AND t.is_transfer=0`,
 			b.CategoryID, start, end).Scan(&spent)
 
 		effective := b.Amount
@@ -155,7 +160,7 @@ func (f *Finance) SummaryMonth(month string) (*MonthSummary, error) {
 				var prevBudget, prevSpent int64
 				_ = f.DB.QueryRow(`SELECT amount FROM budgets WHERE category_id=? AND month=?`,
 					b.CategoryID, prev).Scan(&prevBudget)
-				_ = f.DB.QueryRow(`SELECT COALESCE(SUM(-amount),0) FROM transactions WHERE category_id=? AND date>=? AND date<? AND is_transfer=0`,
+				_ = f.DB.QueryRow(`SELECT CAST(COALESCE(SUM(-(`+fxExpr+`)),0) AS INTEGER) FROM transactions t `+txJoin+` WHERE t.category_id=? AND t.date>=? AND t.date<? AND t.is_transfer=0`,
 					b.CategoryID, ps, pe).Scan(&prevSpent)
 				if carry := prevBudget - prevSpent; carry > 0 {
 					effective += carry
@@ -186,12 +191,16 @@ type SpendingPoint struct {
 }
 
 // SpendingSeries buckets negative flow: by "month" (YYYY-MM) or "category".
+// Amounts convert to the base currency when a fx rate exists.
 func (f *Finance) SpendingSeries(groupBy, from, to string) ([]SpendingPoint, error) {
+	fxExpr := "CAST(t.amount AS REAL) * COALESCE(er.rate_to_base, 1)"
+	txJoin := "LEFT JOIN exchange_rates er ON er.code = t.currency"
 	switch groupBy {
 	case "", "month":
 		rows, err := f.DB.Query(`
-			SELECT substr(date,1,7) AS m, SUM(-amount)
-			FROM transactions WHERE amount<0 AND date>=? AND date<=? AND is_transfer=0
+			SELECT substr(t.date,1,7) AS m, CAST(SUM(-(`+fxExpr+`)) AS INTEGER)
+			FROM transactions t `+txJoin+`
+			WHERE t.amount<0 AND t.date>=? AND t.date<=? AND t.is_transfer=0
 			GROUP BY m ORDER BY m`, from, toEnd(from, to))
 		if err != nil {
 			return nil, err
@@ -208,8 +217,8 @@ func (f *Finance) SpendingSeries(groupBy, from, to string) ([]SpendingPoint, err
 		return out, rows.Err()
 	case "category":
 		rows, err := f.DB.Query(`
-			SELECT COALESCE(c.name,'Uncategorized') AS name, SUM(-t.amount)
-			FROM transactions t LEFT JOIN categories c ON c.id=t.category_id
+			SELECT COALESCE(c.name,'Uncategorized') AS name, CAST(SUM(-(`+fxExpr+`)) AS INTEGER)
+			FROM transactions t `+txJoin+` LEFT JOIN categories c ON c.id=t.category_id
 			WHERE t.amount<0 AND t.date>=? AND t.date<=? AND t.is_transfer=0
 			GROUP BY t.category_id, c.name ORDER BY 2 DESC`, from, toEnd(from, to))
 		if err != nil {

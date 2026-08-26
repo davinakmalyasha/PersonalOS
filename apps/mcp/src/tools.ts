@@ -971,6 +971,30 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     async (a: ToolArgs) => run(() => api.get(`/v1/graph/${a.id}`, { depth: a.depth })),
   );
 
+  // ---------- Phase 13a: multi-currency fx ----------
+
+  server.tool(
+    "manage_fx",
+    "Exchange rates for multi-currency reporting. action=list|set|set_base. Rates multiply STORED MINOR UNITS of the source currency into base minor units (e.g. USD cents -> IDR ≈ 160 when 1 USD = 16,000 IDR). Missing rate = 1:1.",
+    {
+      action: z.enum(["list", "set", "set_base"]).optional().default("list"),
+      code: optStr().describe("currency code, e.g. USD"),
+      rate_to_base: z.number().positive().optional(),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "set":
+          if (!a.code || !a.rate_to_base) throw new Error("code + rate_to_base required");
+          return run(() => api.put("/v1/finance/fx", { code: a.code, rate_to_base: a.rate_to_base }));
+        case "set_base":
+          if (!a.code) throw new Error("code required");
+          return run(() => api.put("/v1/finance/fx/base", { code: a.code }));
+        default:
+          return run(() => api.get("/v1/finance/fx"));
+      }
+    },
+  );
+
 // ---------- Phase 9: agentic depth ----------
 
   server.tool(

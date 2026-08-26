@@ -20,6 +20,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		RawDescription string   `json:"raw_description"`
 		CategoryID     *string  `json:"category_id"`
 		Tags           []string `json:"tags"`
+		Currency       string   `json:"currency"`
 		Notes          string   `json:"notes"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
@@ -44,7 +45,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	t, err := s.finance.CreateTransaction(req.AccountID, *req.AmountMinor, req.Date,
-		req.Merchant, req.RawDescription, req.Notes, req.CategoryID, req.Tags)
+		req.Merchant, req.RawDescription, req.Notes, req.CategoryID, req.Tags, req.Currency)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			fail(w, http.StatusConflict, "duplicate transaction (same date+amount+description) already exists")

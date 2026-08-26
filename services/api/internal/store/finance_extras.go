@@ -176,24 +176,31 @@ type NetWorth struct {
 // NetWorthSeries walks all transactions in date order accumulating per-account
 // balances (seeded with opening balances), emitting the portfolio total at
 // each date where anything moved. Liability accounts subtract from net.
+// Balances are converted to the base currency when an fx rate exists.
 func (f *Finance) NetWorthSeries() (NetWorth, error) {
 	out := NetWorth{Points: []NetWorthPoint{}, Accounts: []map[string]interface{}{}}
 
+	fx, ferr := f.loadRates()
+	if ferr != nil {
+		return out, ferr
+	}
 	kinds := map[string]string{}
+	currencies := map[string]string{}
 	openings := map[string]int64{}
-	acctRows, err := f.DB.Query(`SELECT id, kind, opening_balance_minor FROM accounts`)
+	acctRows, err := f.DB.Query(`SELECT id, kind, opening_balance_minor, currency FROM accounts`)
 	if err != nil {
 		return out, err
 	}
 	for acctRows.Next() {
-		var id, kind string
+		var id, kind, currency string
 		var opening int64
-		if err := acctRows.Scan(&id, &kind, &opening); err != nil {
+		if err := acctRows.Scan(&id, &kind, &opening, &currency); err != nil {
 			acctRows.Close()
 			return out, err
 		}
 		kinds[id] = kind
-		openings[id] = opening
+		openings[id] = fx.toBase(currency, opening)
+		currencies[id] = currency
 	}
 	acctRows.Close()
 
@@ -224,6 +231,7 @@ func (f *Finance) NetWorthSeries() (NetWorth, error) {
 
 	var points []NetWorthPoint
 	lastDate := ""
+	// Transaction amounts convert to base via the owning account's currency.
 	for rows.Next() {
 		var date, accountID string
 		var amount int64
@@ -235,7 +243,7 @@ func (f *Finance) NetWorthSeries() (NetWorth, error) {
 		if lastDate != "" && date != lastDate {
 			points = append(points, NetWorthPoint{Date: lastDate, TotalMinor: netWorth()})
 		}
-		balances[accountID] += amount
+		balances[accountID] += fx.toBase(currencies[accountID], amount)
 		lastDate = date
 	}
 	if lastDate != "" {
@@ -247,7 +255,9 @@ func (f *Finance) NetWorthSeries() (NetWorth, error) {
 
 	for accountID, bal := range balances {
 		out.Accounts = append(out.Accounts, map[string]interface{}{
-			"account_id": accountID, "balance_minor": bal, "kind": kinds[accountID],
+			"account_id": accountID, "balance_minor": bal,
+			"kind": kinds[accountID], "currency": currencies[accountID],
+			"balance_in_base": bal, // balances are already base-converted
 		})
 	}
 	sort.Slice(out.Accounts, func(i, j int) bool {

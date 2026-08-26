@@ -39,9 +39,12 @@ type TxnFilter struct {
 	PageSize   int
 }
 
-func (f *Finance) CreateTransaction(accountID string, amount int64, date, merchant, rawDesc, notes string, categoryID *string, tags []string) (Transaction, error) {
+func (f *Finance) CreateTransaction(accountID string, amount int64, date, merchant, rawDesc, notes string, categoryID *string, tags []string, currency string) (Transaction, error) {
 	if _, err := f.GetAccount(accountID); err != nil {
 		return Transaction{}, err
+	}
+	if currency == "" {
+		currency = f.BaseCurrency()
 	}
 	if categoryID != nil && *categoryID != "" {
 		if _, err := f.GetCategory(*categoryID); err != nil {
@@ -59,7 +62,7 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 	merchant = f.ApplyAlias(merchant)
 	tagJSON := joinTags(normalizeTagList(tags))
 	t := Transaction{
-		ID: NewID(), AccountID: accountID, AmountMinor: amount, Currency: "IDR",
+		ID: NewID(), AccountID: accountID, AmountMinor: amount, Currency: currency,
 		Date: date, Merchant: merchant, RawDescription: rawDesc,
 		CategoryID: categoryID, Notes: notes, CreatedAt: NowRFC3339(),
 	}

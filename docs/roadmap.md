@@ -232,6 +232,20 @@
 **Accepts:** new highlights appear in due queue and leave it after a remembered review; a miss returns them to due-now; `[[Target]]` creates exactly one wiki edge for an existing title and none for missing ones; graph depth-2 reaches linked concepts; archived notes vanish from search and return on unarchive.
 
 ---
+## Phase 13a - Multi-currency FX (DONE)
+
+**Features:**
+
+- `exchange_rates` table + base currency in `app_meta` (default IDR, switchable via `PUT /finance/fx/base`)
+- **Semantics:** `rate_to_base` multiplies STORED MINOR UNITS of the source currency into base minor units (USD cents -> IDR ~160 when 1 USD = 16,000); missing rate = 1:1 passthrough so single-currency users see zero change
+- Conversion applied at **report time** everywhere money aggregates: net worth (per-account balances + openings), month summary income/outcome/category rollups/budget spent (transaction-level join), spending series, cash-flow forecast opening balance
+- Rounding is half-away-from-zero per conversion; rates CRUD via `GET/PUT /finance/fx`
+- Transactions accept an explicit `currency` on manual create (imports already carried one)
+- MCP: `manage_fx` added (65 tools total)
+
+**Accepts:** a USD account with a rate set converts its opening and transactions into the IDR total for net-worth/summary; without a rate everything behaves exactly as before.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).
