@@ -25,7 +25,7 @@ func TestSortRulesPriorityThenID(t *testing.T) {
 func TestMatchFirstByPriorityWins(t *testing.T) {
 	rs := rules()
 	SortRules(rs)
-	cat, ok := Match(rs, "TRX STARBUCKS COFFEE 08/2026")
+	cat, ok := Match(rs, "TRX STARBUCKS COFFEE 08/2026", -45000)
 	if !ok || cat != "cat_drinks" {
 		t.Fatalf("expected cat_drinks by priority 5 rule, got %q ok=%v", cat, ok)
 	}
@@ -34,7 +34,7 @@ func TestMatchFirstByPriorityWins(t *testing.T) {
 func TestMatchCaseInsensitive(t *testing.T) {
 	rs := rules()
 	SortRules(rs)
-	if cat, ok := Match(rs, "monthly salary august"); !ok || cat != "cat_income" {
+	if cat, ok := Match(rs, "monthly salary august", 12500000); !ok || cat != "cat_income" {
 		t.Fatalf("case-insensitive match failed: %q %v", cat, ok)
 	}
 }
@@ -42,7 +42,7 @@ func TestMatchCaseInsensitive(t *testing.T) {
 func TestMatchNoHit(t *testing.T) {
 	rs := rules()
 	SortRules(rs)
-	if _, ok := Match(rs, "totally unrelated"); ok {
+	if _, ok := Match(rs, "totally unrelated", -10000); ok {
 		t.Fatal("expected no match")
 	}
 }

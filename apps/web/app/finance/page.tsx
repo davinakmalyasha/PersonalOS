@@ -9,7 +9,9 @@ import { ImportPanel } from "@/components/finance/import-panel";
 import {
   AliasesPanel,
   BillsStrip,
+  ForecastCard,
   GoalsPanel,
+  SafeToSpendCard,
   SubscriptionsPanel,
 } from "@/components/finance/extras-panels";
 import {
@@ -69,6 +71,11 @@ export default function FinancePage() {
         )}
 
         <BillsStrip />
+
+        <div className="grid gap-4 lg:grid-cols-2">
+          <SafeToSpendCard />
+          <ForecastCard />
+        </div>
 
         <SummaryCards
           income={summary?.income_minor ?? 0}

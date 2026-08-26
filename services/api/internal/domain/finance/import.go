@@ -40,7 +40,7 @@ func Prepare(rows []TxnRow, rowErrs []RowError, existing map[string]struct{}, ru
 		existing[key] = struct{}{} // in-file duplicates also count as skipped
 
 		cat := ""
-		if id, ok := Match(sorted, r.RawDesc); ok {
+		if id, ok := Match(sorted, r.RawDesc, r.Amount); ok {
 			cat = id
 			res.AutoCategorized++
 		}

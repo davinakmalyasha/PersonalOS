@@ -170,6 +170,22 @@
 **Accepts:** fixture-API tests prove pairing count, Netflix-only bill selection within 7d, over-budget filtering, bearer token forwarding and 5xx surfacing; nightly gate fires exactly once per day at the configured UTC hour; Discord/Telegram payloads captured by httptest servers.
 
 ---
+## Phase 12a - Finance depth (DONE)
+
+**Features (reference-grounded: Monarch recurring review, Simplifi projected cash flow, PocketGuard safe-to-spend):**
+
+- Managed subscriptions: detection upserts into a `subscriptions` table (UNIQUE merchant+amount) without clobbering lifecycle; confirm/mute/cancel via PATCH; manual bill entry (e.g. rent paid offline); `POST /finance/subscriptions/sync`
+- Safe-to-spend (`GET /finance/safe-to-spend`): income MTD - spend MTD - unspent budgets (rollover-aware) - active subs still due this month
+- Cash-flow forecast (`GET /finance/forecast?days&alert_below`): projected daily balance from current balances + active subscription charges + trailing-90d avg net flow; lowest point + alert flag
+- Scheduler low-balance nudge (`SCHED_LOW_BALANCE_MINOR` / `SCHED_LOW_BALANCE_DAYS`)
+- Rules v2: optional amount window (bounds on |amount|) on rules + `POST /rules/{id}/apply` backfill re-categorizes matching history
+- Transaction tags (create/update/filter); accounts gain `kind` asset|liability + `opening_balance_minor` -> net worth now assets-vs-liabilities seeded from openings
+- `GET /transactions/export.csv` portability export
+- MCP: `manage_subscriptions`, `safe_to_spend`, `cashflow_forecast`, `recategorize_history` added (56 tools total)
+
+**Accepts:** three Netflix charges -> sync creates one active sub, second sync is idempotent; muting hides it from status=active; forecast projects the rent charge landing on its due date and alerts below threshold; safe-to-spend math matches components; backfill moves only rows inside the rule's amount window; liability account subtracts from net.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).

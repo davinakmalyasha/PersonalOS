@@ -13,13 +13,14 @@ import (
 
 func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		AccountID      string  `json:"account_id"`
-		AmountMinor    *int64  `json:"amount_minor"`
-		Date           string  `json:"date"`
-		Merchant       string  `json:"merchant"`
-		RawDescription string  `json:"raw_description"`
-		CategoryID     *string `json:"category_id"`
-		Notes          string  `json:"notes"`
+		AccountID      string   `json:"account_id"`
+		AmountMinor    *int64   `json:"amount_minor"`
+		Date           string   `json:"date"`
+		Merchant       string   `json:"merchant"`
+		RawDescription string   `json:"raw_description"`
+		CategoryID     *string  `json:"category_id"`
+		Tags           []string `json:"tags"`
+		Notes          string   `json:"notes"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
@@ -43,7 +44,7 @@ func (s *Server) handleCreateTransaction(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	t, err := s.finance.CreateTransaction(req.AccountID, *req.AmountMinor, req.Date,
-		req.Merchant, req.RawDescription, req.Notes, req.CategoryID)
+		req.Merchant, req.RawDescription, req.Notes, req.CategoryID, req.Tags)
 	if err != nil {
 		if errors.Is(err, store.ErrConflict) {
 			fail(w, http.StatusConflict, "duplicate transaction (same date+amount+description) already exists")
@@ -67,6 +68,7 @@ func (s *Server) handleListTransactions(w http.ResponseWriter, r *http.Request) 
 		Uncat:      q.Get("category_id") == "none",
 		From:       q.Get("from"),
 		To:         q.Get("to"),
+		Tag:        q.Get("tag"),
 		Q:          q.Get("q"),
 		Page:       int(page),
 		PageSize:   int(size),
@@ -103,19 +105,20 @@ func (s *Server) handleGetTransaction(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleUpdateTransaction(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Date           *string `json:"date"`
-		AmountMinor    *int64  `json:"amount_minor"`
-		Merchant       *string `json:"merchant"`
-		RawDescription *string `json:"raw_description"`
-		Notes          *string `json:"notes"`
+		Date           *string  `json:"date"`
+		AmountMinor    *int64   `json:"amount_minor"`
+		Merchant       *string  `json:"merchant"`
+		RawDescription *string  `json:"raw_description"`
+		Notes          *string  `json:"notes"`
 		CategoryID     **string `json:"category_id"`
+		Tags           *[]string `json:"tags"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
 		return
 	}
 	upd := store.TransactionUpdate{Date: req.Date, Amount: req.AmountMinor, Merchant: req.Merchant,
-		RawDescription: req.RawDescription, Notes: req.Notes}
+		RawDescription: req.RawDescription, Notes: req.Notes, Tags: req.Tags}
 	if req.CategoryID != nil {
 		upd.CategoryID = *req.CategoryID // **string -> *string (empty string clears)
 	}
@@ -206,7 +209,8 @@ func (s *Server) handleImportTransactions(w http.ResponseWriter, r *http.Request
 	}
 	rules := make([]finance.Rule, len(ruleRows))
 	for i, rr := range ruleRows {
-		rules[i] = finance.Rule{ID: rr.ID, Pattern: rr.Pattern, CategoryID: rr.CategoryID, Priority: rr.Priority}
+		rules[i] = finance.Rule{ID: rr.ID, Pattern: rr.Pattern, CategoryID: rr.CategoryID,
+			Priority: rr.Priority, AmountMin: rr.AmountMin, AmountMax: rr.AmountMax}
 	}
 
 	currency := r.FormValue("currency")

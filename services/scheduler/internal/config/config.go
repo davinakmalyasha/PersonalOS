@@ -21,6 +21,9 @@ type Config struct {
 	TelegramBotToken string
 	TelegramChatID   string
 	DiscordWebhook   string
+
+	LowBalanceDays      int   // forecast horizon for the low-balance check (default 14)
+	LowBalanceThreshold int64 // minor units; 0 disables the check
 }
 
 func Load() Config {
@@ -36,6 +39,9 @@ func Load() Config {
 		TelegramBotToken: os.Getenv("TELEGRAM_BOT_TOKEN"),
 		TelegramChatID:   os.Getenv("TELEGRAM_CHAT_ID"),
 		DiscordWebhook:   os.Getenv("DISCORD_WEBHOOK_URL"),
+
+		LowBalanceDays:      envInt("SCHED_LOW_BALANCE_DAYS", 14),
+		LowBalanceThreshold: envIntOr64("SCHED_LOW_BALANCE_MINOR", 0),
 	}
 }
 
@@ -63,6 +69,15 @@ func envInt(key string, fallback int) int {
 func envIntOr(key string, fallback int) int {
 	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
 		if n, err := strconv.Atoi(v); err == nil {
+			return n
+		}
+	}
+	return fallback
+}
+
+func envIntOr64(key string, fallback int64) int64 {
+	if v := strings.TrimSpace(os.Getenv(key)); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
 			return n
 		}
 	}

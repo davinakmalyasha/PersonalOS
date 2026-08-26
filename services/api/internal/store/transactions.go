@@ -10,18 +10,21 @@ import (
 )
 
 type Transaction struct {
-	ID             string  `json:"id"`
-	AccountID      string  `json:"account_id"`
-	AmountMinor    int64   `json:"amount_minor"`
-	Currency       string  `json:"currency"`
-	Date           string  `json:"date"`
-	Merchant       string  `json:"merchant"`
-	RawDescription string  `json:"raw_description"`
-	CategoryID     *string `json:"category_id"`
-	CategoryName   *string `json:"category_name,omitempty"`
-	Notes          string  `json:"notes"`
-	IsTransfer     bool    `json:"is_transfer"`
-	CreatedAt      string  `json:"created_at"`
+	ID             string   `json:"id"`
+	AccountID      string   `json:"account_id"`
+	AmountMinor    int64    `json:"amount_minor"`
+	Currency       string   `json:"currency"`
+	Date           string   `json:"date"`
+	Merchant       string   `json:"merchant"`
+	RawDescription string   `json:"raw_description"`
+	CategoryID     *string  `json:"category_id"`
+	CategoryName   *string  `json:"category_name,omitempty"`
+	Tags           []string `json:"tags"`
+	Notes          string   `json:"notes"`
+	IsTransfer     bool     `json:"is_transfer"`
+	CreatedAt      string   `json:"created_at"`
+
+	tagsRaw string
 }
 
 type TxnFilter struct {
@@ -30,12 +33,13 @@ type TxnFilter struct {
 	Uncat      bool
 	From, To   string
 	Min, Max   *int64
+	Tag        string
 	Q          string
 	Page       int
 	PageSize   int
 }
 
-func (f *Finance) CreateTransaction(accountID string, amount int64, date, merchant, rawDesc, notes string, categoryID *string) (Transaction, error) {
+func (f *Finance) CreateTransaction(accountID string, amount int64, date, merchant, rawDesc, notes string, categoryID *string, tags []string) (Transaction, error) {
 	if _, err := f.GetAccount(accountID); err != nil {
 		return Transaction{}, err
 	}
@@ -53,6 +57,7 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 		merchant = firstN(rawDesc, 60)
 	}
 	merchant = f.ApplyAlias(merchant)
+	tagJSON := joinTags(normalizeTagList(tags))
 	t := Transaction{
 		ID: NewID(), AccountID: accountID, AmountMinor: amount, Currency: "IDR",
 		Date: date, Merchant: merchant, RawDescription: rawDesc,
@@ -60,10 +65,10 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 	}
 	hash := finance.DescriptionHash(rawDesc)
 	_, err := f.DB.Exec(`
-		INSERT INTO transactions (id,account_id,amount,currency,date,merchant,raw_description,category_id,hash,notes,created_at)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+		INSERT INTO transactions (id,account_id,amount,currency,date,merchant,raw_description,category_id,hash,notes,tags,created_at)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
 		t.ID, t.AccountID, t.AmountMinor, t.Currency, t.Date, t.Merchant, t.RawDescription,
-		t.CategoryID, hash, t.Notes, t.CreatedAt)
+		t.CategoryID, hash, t.Notes, tagJSON, t.CreatedAt)
 	if isUniqueErr(err) {
 		return Transaction{}, ErrConflict // duplicate natural key (date, amount, hash)
 	}
@@ -78,12 +83,12 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 func txnScan(dest *Transaction) []interface{} {
 	return []interface{}{&dest.ID, &dest.AccountID, &dest.AmountMinor, &dest.Currency,
 		&dest.Date, &dest.Merchant, &dest.RawDescription, &dest.CategoryID,
-		&dest.CategoryName, &dest.Notes, &dest.IsTransfer, &dest.CreatedAt}
+		&dest.CategoryName, &dest.tagsRaw, &dest.Notes, &dest.IsTransfer, &dest.CreatedAt}
 }
 
 const txnSelect = `
 	SELECT t.id,t.account_id,t.amount,t.currency,t.date,t.merchant,t.raw_description,
-	       t.category_id,c.name,t.notes,t.is_transfer,t.created_at
+	       t.category_id,c.name,t.tags,t.notes,t.is_transfer,t.created_at
 	FROM transactions t LEFT JOIN categories c ON c.id=t.category_id`
 
 func (f *Finance) GetTransaction(id string) (Transaction, error) {
@@ -92,6 +97,10 @@ func (f *Finance) GetTransaction(id string) (Transaction, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		return Transaction{}, ErrNotFound
 	}
+	if err != nil {
+		return Transaction{}, err
+	}
+	t.Tags = splitTags(t.tagsRaw)
 	return t, err
 }
 
@@ -130,6 +139,10 @@ func (f *Finance) buildTxnWhere(fl TxnFilter) (string, []interface{}) {
 		pat := "%" + strings.ToLower(fl.Q) + "%"
 		args = append(args, pat, pat)
 	}
+	if fl.Tag != "" {
+		where = append(where, "t.tags LIKE ?")
+		args = append(args, `%"`+fl.Tag+`"%`)
+	}
 	return strings.Join(where, " AND "), args
 }
 
@@ -161,6 +174,7 @@ func (f *Finance) ListTransactions(fl TxnFilter) ([]Transaction, int, error) {
 		if err := rows.Scan(txnScan(&t)...); err != nil {
 			return nil, 0, err
 		}
+		t.Tags = splitTags(t.tagsRaw)
 		out = append(out, t)
 	}
 	return out, total, rows.Err()
@@ -196,11 +210,14 @@ func (f *Finance) UpdateTransaction(id string, upd TransactionUpdate) (Transacti
 			cur.CategoryID = upd.CategoryID
 		}
 	}
+	if upd.Tags != nil {
+		cur.Tags = normalizeTagList(*upd.Tags)
+	}
 	hash := finance.DescriptionHash(cur.RawDescription)
 	_, err = f.DB.Exec(`
-		UPDATE transactions SET date=?, amount=?, merchant=?, raw_description=?, notes=?, category_id=?, hash=?
+		UPDATE transactions SET date=?, amount=?, merchant=?, raw_description=?, notes=?, category_id=?, tags=?, hash=?
 		WHERE id=?`,
-		cur.Date, cur.AmountMinor, cur.Merchant, cur.RawDescription, cur.Notes, cur.CategoryID, hash, id)
+		cur.Date, cur.AmountMinor, cur.Merchant, cur.RawDescription, cur.Notes, cur.CategoryID, joinTags(cur.Tags), hash, id)
 	if isUniqueErr(err) {
 		return Transaction{}, ErrConflict
 	}
@@ -217,7 +234,8 @@ type TransactionUpdate struct {
 	Merchant       *string
 	RawDescription *string
 	Notes          *string
-	CategoryID     *string // empty string clears
+	CategoryID     *string  // empty string clears
+	Tags           *[]string
 }
 
 func (f *Finance) DeleteTransaction(id string) error {

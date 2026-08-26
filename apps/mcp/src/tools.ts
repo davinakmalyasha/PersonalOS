@@ -141,6 +141,7 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
       merchant: optStr(),
       raw_description: optStr(),
       category_id: optStr(),
+      tags: z.array(z.string()).optional(),
       notes: optStr(),
     },
     async (a: ToolArgs) => run(() => api.post("/v1/transactions", a)),
@@ -723,6 +724,67 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
     "Free-form body measurements (chest/waist/…) as per-key time series over a window.",
     { from: optStr().describe("YYYY-MM-DD"), to: optStr().describe("YYYY-MM-DD") },
     async (a: ToolArgs) => run(() => api.get("/v1/body-metrics/trends", a)),
+  );
+
+  // ---------- Phase 12a: finance depth ----------
+
+  server.tool(
+    "manage_subscriptions",
+    "Managed recurring charges. action=list|create|sync|set_status — sync upserts detected subscriptions; set_status moves one through active|muted|cancelled.",
+    {
+      action: z.enum(["list", "create", "sync", "set_status"]).optional().default("list"),
+      id: optStr().describe("set_status: subscription id"),
+      status: z.enum(["active", "muted", "cancelled"]).optional(),
+      merchant: optStr(),
+      amount_minor: z.number().int().optional().describe("negative = charge"),
+      cadence: z.enum(["weekly", "monthly", "yearly"]).optional(),
+      next_due: optStr().describe("YYYY-MM-DD"),
+      status_filter: z.enum(["active", "muted", "cancelled"]).optional().describe("list filter"),
+    },
+    async (a: ToolArgs) => {
+      switch (a.action) {
+        case "create":
+          return run(() =>
+            api.post("/v1/subscriptions", {
+              merchant: a.merchant,
+              amount_minor: a.amount_minor,
+              cadence: a.cadence ?? null,
+              next_due: a.next_due ?? null,
+            }),
+          );
+        case "sync":
+          return run(() => api.post("/v1/finance/subscriptions/sync"));
+        case "set_status":
+          if (!a.id || !a.status) throw new Error("id + status required for set_status");
+          return run(() => api.patch(`/v1/subscriptions/${a.id}`, { status: a.status }));
+        default:
+          return run(() => api.get("/v1/subscriptions", { status: a.status_filter }));
+      }
+    },
+  );
+
+  server.tool(
+    "safe_to_spend",
+    "PocketGuard-style number: income MTD − spend MTD − unspent budgets − subscriptions still due this month.",
+    { month: optStr().describe("YYYY-MM, default current") },
+    async (a: ToolArgs) => run(() => api.get("/v1/finance/safe-to-spend", a)),
+  );
+
+  server.tool(
+    "cashflow_forecast",
+    "Projected balance day-by-day from current balances, active subscriptions and trailing-90d average net flow.",
+    {
+      days: intOpt().describe("default 30, max 120"),
+      alert_below: z.number().int().optional().describe("minor units; adds alert=true when projected dips below"),
+    },
+    async (a: ToolArgs) => run(() => api.get("/v1/finance/forecast", a)),
+  );
+
+  server.tool(
+    "recategorize_history",
+    "Backfill: re-run a categorization rule over ALL transactions (respects its pattern + amount window). Returns how many moved.",
+    { rule_id: str() },
+    async (a: ToolArgs) => run(() => api.post(`/v1/rules/${a.rule_id}/apply`)),
   );
 
 // ---------- Phase 9: agentic depth ----------

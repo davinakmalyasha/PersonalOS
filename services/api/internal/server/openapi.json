@@ -29,8 +29,10 @@
           "name": { "type": "string" },
           "type": { "type": "string", "enum": ["checking", "savings", "cash", "card", "wallet"] },
           "currency": { "type": "string" },
+          "kind": { "type": "string", "enum": ["asset", "liability"], "description": "liability balances subtract from net worth" },
+          "opening_balance_minor": { "type": "integer" },
           "created_at": { "type": "string" },
-          "balance_minor": { "type": "integer", "description": "sum of signed transaction amounts" }
+          "balance_minor": { "type": "integer", "description": "opening + sum of signed transaction amounts" }
         }
       },
       "Transaction": {
@@ -45,8 +47,33 @@
           "raw_description": { "type": "string" },
           "category_id": { "type": ["string", "null"] },
           "category_name": { "type": ["string", "null"] },
+          "tags": { "type": "array", "items": { "type": "string" } },
           "notes": { "type": "string" },
           "created_at": { "type": "string" }
+        }
+      },
+      "Subscription": {
+        "type": "object",
+        "description": "Managed recurring charge; detection upserts rows, lifecycle is manual.",
+        "properties": {
+          "id": { "type": "string" },
+          "merchant": { "type": "string" },
+          "amount_minor": { "type": "integer", "description": "negative = charge" },
+          "cadence": { "type": "string", "enum": ["weekly", "monthly", "yearly"] },
+          "next_due": { "type": ["string", "null"], "format": "date" },
+          "status": { "type": "string", "enum": ["active", "muted", "cancelled"] },
+          "occurrences": { "type": "integer" }
+        }
+      },
+      "SafeToSpend": {
+        "type": "object",
+        "properties": {
+          "month": { "type": "string" },
+          "income_mtd_minor": { "type": "integer" },
+          "spend_mtd_minor": { "type": "integer" },
+          "budget_left_minor": { "type": "integer" },
+          "bills_ahead_minor": { "type": "integer" },
+          "safe_to_spend_minor": { "type": "integer" }
         }
       },
       "CategoryNode": {
@@ -67,6 +94,8 @@
           "pattern": { "type": "string" },
           "category_id": { "type": "string" },
           "priority": { "type": "integer" },
+          "amount_min": { "type": ["integer", "null"], "description": "min |amount| for the rule to fire" },
+          "amount_max": { "type": ["integer", "null"], "description": "max |amount| for the rule to fire" },
           "created_at": { "type": "string" }
         }
       },
@@ -570,6 +599,68 @@
         "operationId": "netWorth",
         "summary": "Cumulative per-account balances over time (point per day with movement) + latest per-account balances",
         "responses": { "200": { "description": "NetWorth" } }
+      }
+    },
+    "/v1/subscriptions": {
+      "get": {
+        "operationId": "listSubscriptions",
+        "summary": "Managed recurring charges (detection upserts; lifecycle manual)",
+        "parameters": [{ "name": "status", "in": "query", "schema": { "type": "string", "enum": ["active", "muted", "cancelled"] } }],
+        "responses": { "200": { "description": "Subscription[]" } }
+      },
+      "post": {
+        "operationId": "createSubscription",
+        "summary": "Add a bill manually {merchant, amount_minor, cadence?, next_due?}",
+        "responses": { "201": { "description": "created" }, "409": { "description": "duplicate merchant+amount" }, "400": { "description": "validation" } }
+      }
+    },
+    "/v1/subscriptions/{id}": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "patch": {
+        "operationId": "setSubscriptionStatus",
+        "summary": "Move through active|muted|cancelled",
+        "responses": { "200": { "description": "Subscription" }, "400": { "description": "bad status" }, "404": { "description": "missing" } }
+      }
+    },
+    "/v1/finance/subscriptions/sync": {
+      "post": {
+        "operationId": "syncSubscriptions",
+        "summary": "Re-run detection and upsert managed rows (lifecycle state preserved)",
+        "responses": { "200": { "description": "{detected, created, items}" } }
+      }
+    },
+    "/v1/finance/safe-to-spend": {
+      "get": {
+        "operationId": "safeToSpend",
+        "summary": "Income MTD − spend MTD − unspent budgets − subs still due this month",
+        "parameters": [{ "name": "month", "in": "query", "schema": { "type": "string" } }],
+        "responses": { "200": { "description": "SafeToSpend" }, "400": { "description": "bad month" } }
+      }
+    },
+    "/v1/finance/forecast": {
+      "get": {
+        "operationId": "cashflowForecast",
+        "summary": "Projected daily balance from current balances + active subscriptions + trailing-90d avg net flow",
+        "parameters": [
+          { "name": "days", "in": "query", "schema": { "type": "integer", "default": 30, "maximum": 120 } },
+          { "name": "alert_below", "in": "query", "schema": { "type": "integer" }, "description": "minor units; adds alert=true when any day dips below" }
+        ],
+        "responses": { "200": { "description": "{days, start_minor, avg_daily_net_minor, lowest?, points[], alert?}" } }
+      }
+    },
+    "/v1/rules/{id}/apply": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "applyRuleBackfill",
+        "summary": "Backfill: re-categorize all matching history with this rule",
+        "responses": { "200": { "description": "{updated: n}" }, "404": { "description": "missing rule" } }
+      }
+    },
+    "/v1/transactions/export.csv": {
+      "get": {
+        "operationId": "exportTransactionsCSV",
+        "summary": "CSV export of transactions (account_id/from/to filters)",
+        "responses": { "200": { "description": "text/csv attachment" } }
       }
     },
     "/v1/finance/bills": {

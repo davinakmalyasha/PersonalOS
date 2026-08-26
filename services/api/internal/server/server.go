@@ -112,6 +112,7 @@ func (s *Server) mountFinance(r chi.Router) {
 		r.Get("/", s.handleListRules)
 		r.Patch("/{id}", s.handleUpdateRule)
 		r.Delete("/{id}", s.handleDeleteRule)
+		r.Post("/{id}/apply", s.handleApplyRule)
 	})
 	r.Route("/budgets", func(r chi.Router) {
 		r.Post("/", s.handleUpsertBudget)

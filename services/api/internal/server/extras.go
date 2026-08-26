@@ -3,6 +3,8 @@
 import (
 	"errors"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/davinakmalyasha/PersonalOS/services/api/internal/store"
@@ -39,6 +41,17 @@ func (s *Server) mountExtras(r chi.Router) {
 	r.Get("/events/{id}/exceptions", s.handleListEventOverrides)
 	r.Delete("/events/exceptions/{id}", s.handleDeleteEventOverride)
 	r.Get("/planner/review", s.handlePlannerReview)
+
+	// Phase 12a: finance depth.
+	r.Route("/subscriptions", func(r chi.Router) {
+		r.Post("/", s.handleCreateSubscription)
+		r.Get("/", s.handleListSubscriptions)
+		r.Patch("/{id}", s.handleUpdateSubscriptionStatus)
+	})
+	r.Post("/finance/subscriptions/sync", s.handleSyncSubscriptions)
+	r.Get("/finance/safe-to-spend", s.handleSafeToSpend)
+	r.Get("/finance/forecast", s.handleForecast)
+	r.Get("/transactions/export.csv", s.handleExportTransactionsCSV)
 }
 
 // ---- Goals ----
@@ -342,4 +355,184 @@ func (s *Server) handlePlannerReview(w http.ResponseWriter, r *http.Request) {
 		rb.BudgetLines = sum.BudgetLines
 	}
 	writeJSON(w, http.StatusOK, rb)
+}
+
+// ---- Phase 12a: finance depth handlers ----
+
+// POST /subscriptions {merchant, amount_minor, cadence?, next_due?}
+func (s *Server) handleCreateSubscription(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Merchant    string `json:"merchant"`
+		AmountMinor int64  `json:"amount_minor"`
+		Cadence     string `json:"cadence"`
+		NextDue     string `json:"next_due"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	sub, err := s.finance.CreateSubscription(req.Merchant, req.AmountMinor, req.Cadence, req.NextDue)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid subscription",
+				fieldError{"merchant/amount/cadence/next_due", "non-empty; non-zero; weekly|monthly|yearly; YYYY-MM-DD"})
+			return
+		}
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusCreated, sub)
+}
+
+// GET /subscriptions?status=
+func (s *Server) handleListSubscriptions(w http.ResponseWriter, r *http.Request) {
+	items, err := s.finance.ListSubscriptions(r.URL.Query().Get("status"))
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid status", fieldError{"status", "active|muted|cancelled"})
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"items": items})
+}
+
+// PATCH /subscriptions/{id} {status: active|muted|cancelled}
+func (s *Server) handleUpdateSubscriptionStatus(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := decodeJSON(r, &req, 0); err != nil {
+		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
+		return
+	}
+	sub, err := s.finance.UpdateSubscriptionStatus(chiURLParam(r, "id"), req.Status)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid status", fieldError{"status", "active|muted|cancelled"})
+			return
+		}
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, sub)
+}
+
+// POST /finance/subscriptions/sync — re-run detection and upsert managed rows.
+func (s *Server) handleSyncSubscriptions(w http.ResponseWriter, r *http.Request) {
+	detected, err := s.finance.FindRecurring()
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	created, err := s.finance.SyncSubscriptions(detected)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	items, _ := s.finance.ListSubscriptions("")
+	writeJSON(w, http.StatusOK, map[string]interface{}{
+		"detected": len(detected), "created": created, "items": items,
+	})
+}
+
+// GET /finance/safe-to-spend?month=YYYY-MM
+func (s *Server) handleSafeToSpend(w http.ResponseWriter, r *http.Request) {
+	month := r.URL.Query().Get("month")
+	if month == "" {
+		month = time.Now().UTC().Format("2006-01")
+	}
+	sts, err := s.finance.SafeToSpend(month)
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			fail(w, http.StatusBadRequest, "invalid month", fieldError{"month", "YYYY-MM"})
+			return
+		}
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, sts)
+}
+
+// GET /finance/forecast?days=30&alert_below= (minor units)
+func (s *Server) handleForecast(w http.ResponseWriter, r *http.Request) {
+	days := 30
+	if n, ok := queryInt(r, "days"); ok {
+		days = int(n)
+	}
+	fc, err := s.finance.Forecast(days)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	resp := map[string]interface{}{
+		"days": fc.Days, "start_minor": fc.StartMinor,
+		"avg_daily_net_minor": fc.AvgDailyNet, "lowest": fc.Lowest, "points": fc.Points,
+	}
+	if v, ok := queryInt(r, "alert_below"); ok {
+		willDrop, _, aerr := s.finance.LowBalanceAlert(days, v)
+		if aerr == nil {
+			resp["alert"] = willDrop
+		}
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// GET /transactions/export.csv?account_id&from&to — CSV portability.
+func (s *Server) handleExportTransactionsCSV(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	fl := store.TxnFilter{
+		AccountID: q.Get("account_id"),
+		From:      q.Get("from"),
+		To:        q.Get("to"),
+		PageSize:  100,
+	}
+	var all []store.Transaction
+	for page := 1; ; page++ {
+		fl.Page = page
+		items, total, err := s.finance.ListTransactions(fl)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		all = append(all, items...)
+		if len(all) >= total || len(items) == 0 {
+			break
+		}
+	}
+	w.Header().Set("Content-Type", "text/csv; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="transactions.csv"`)
+	_, _ = w.Write([]byte("id,date,amount_minor,currency,merchant,description,category,tags,notes,is_transfer\n"))
+	for _, t := range all {
+		cat := ""
+		if t.CategoryName != nil {
+			cat = *t.CategoryName
+		}
+		record := []string{
+			t.ID, t.Date, strconv.FormatInt(t.AmountMinor, 10), t.Currency,
+			csvEscape(t.Merchant), csvEscape(t.RawDescription), csvEscape(cat),
+			csvEscape(strings.Join(t.Tags, ";")), csvEscape(t.Notes),
+			boolStr(t.IsTransfer),
+		}
+		_, _ = w.Write([]byte(strings.Join(record, ",") + "\n"))
+	}
+}
+
+func csvEscape(s string) string {
+	if strings.ContainsAny(s, ",\"\n\r") {
+		return `"` + strings.ReplaceAll(s, `"`, `""`) + `"`
+	}
+	return s
+}
+
+func boolStr(b bool) string {
+	if b {
+		return "true"
+	}
+	return "false"
 }

@@ -32,12 +32,15 @@ func main() {
 	}
 
 	runner := &jobs.Runner{Client: jobs.NewClient(cfg.APIURL, cfg.APIToken)}
+	runner.LowBalanceDays = cfg.LowBalanceDays
+	runner.LowBalanceThreshold = cfg.LowBalanceThreshold
 	interval := time.Duration(cfg.IntervalSeconds) * time.Second
 
 	logger.Info().
 		Str("api", cfg.APIURL).
 		Dur("interval", interval).
 		Int("run_hour_utc", cfg.RunHourUTC).
+		Int64("low_balance_threshold", cfg.LowBalanceThreshold).
 		Bool("notify", len(channels) > 0).
 		Msg("scheduler starting")
 

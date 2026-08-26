@@ -3,7 +3,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { apiGet, apiSend, formatMinor, type UpcomingBill } from "@/lib/api";
+import {
+  apiGet,
+  apiSend,
+  formatMinor,
+  todayStr,
+  type Forecast,
+  type SafeToSpend,
+  type Subscription,
+  type UpcomingBill,
+} from "@/lib/api";
 
 type Goal = {
   id: string;
@@ -12,14 +21,6 @@ type Goal = {
   target_minor: number | null;
   saved_minor: number;
   deadline: string | null;
-};
-
-type RecurringSub = {
-  merchant: string;
-  amount_minor: number;
-  occurrences: number;
-  last_date?: string;
-  next_guess?: string;
 };
 
 type Alias = { id: string; pattern: string; canonical: string };
@@ -93,32 +94,146 @@ export function GoalsPanel() {
   );
 }
 
-export function SubscriptionsPanel() {
-  const [subs, setSubs] = useState<RecurringSub[]>([]);
+export function SafeToSpendCard() {
+  const [sts, setSts] = useState<SafeToSpend | null>(null);
   useEffect(() => {
-    apiGet<{ items: RecurringSub[] }>("/v1/finance/recurring")
-      .then((r) => setSubs(r.items ?? []))
+    apiGet<SafeToSpend>("/v1/finance/safe-to-spend")
+      .then(setSts)
       .catch(() => {});
   }, []);
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="text-sm">Detected subscriptions</CardTitle>
+      <CardContent className="flex items-center justify-between py-4">
+        <div>
+          <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+            Safe to spend · {sts?.month ?? todayStr().slice(0, 7)}
+          </p>
+          <p className="font-mono text-2xl font-semibold tabular-nums">
+            {sts ? formatMinor(sts.safe_to_spend_minor) : "—"}
+          </p>
+        </div>
+        <div className="space-y-0.5 text-right font-mono text-[11px] tabular-nums text-muted-foreground">
+          <p>in {sts ? formatMinor(sts.income_mtd_minor) : "—"}</p>
+          <p>out {sts ? formatMinor(sts.spend_mtd_minor) : "—"}</p>
+          <p>budget left {sts ? formatMinor(sts.budget_left_minor) : "—"}</p>
+          <p>bills ahead {sts ? formatMinor(sts.bills_ahead_minor) : "—"}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function ForecastCard() {
+  const [fc, setFc] = useState<Forecast | null>(null);
+  useEffect(() => {
+    apiGet<Forecast>("/v1/finance/forecast?days=30")
+      .then(setFc)
+      .catch(() => {});
+  }, []);
+  if (!fc || fc.points.length === 0) return null;
+  const vals = fc.points.map((p) => p.projected_minor);
+  const min = Math.min(...vals);
+  const max = Math.max(...vals);
+  const span = max > min ? max - min : 1;
+  const pts = fc.points
+    .map((p, i) => `${(i / (fc.points.length - 1)) * 100},${28 - ((p.projected_minor - min) / span) * 26}`)
+    .join(" ");
+  return (
+    <Card>
+      <CardHeader className="pb-0">
+        <CardTitle className="text-sm">Cash-flow forecast · 30d</CardTitle>
       </CardHeader>
       <CardContent>
-        {subs.length === 0 ? (
+        <svg viewBox="0 0 100 30" preserveAspectRatio="none" className="h-12 w-full">
+          <polyline points={pts} fill="none" stroke="currentColor" strokeWidth="1.2" vectorEffect="non-scaling-stroke" />
+        </svg>
+        <div className="mt-1 flex items-center justify-between font-mono text-[10px] tabular-nums text-muted-foreground">
+          <span>now {formatMinor(fc.start_minor)}</span>
+          {fc.lowest && (
+            <span className={fc.lowest.projected_minor < 0 ? "text-destructive" : ""}>
+              low {formatMinor(fc.lowest.projected_minor)} on {fc.lowest.date}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+export function SubscriptionsPanel() {
+  const [subs, setSubs] = useState<Subscription[]>([]);
+  const [showAll, setShowAll] = useState(false);
+
+  const reload = useCallback(() => {
+    apiGet<{ items: Subscription[] }>("/v1/subscriptions")
+      .then((r) => setSubs(r.items ?? []))
+      .catch(() => {});
+  }, []);
+  useEffect(reload, [reload]);
+
+  const sync = async () => {
+    await apiSend("/v1/finance/subscriptions/sync", "POST");
+    reload();
+  };
+  const setStatus = async (id: string, status: Subscription["status"]) => {
+    await apiSend(`/v1/subscriptions/${id}`, "PATCH", { status });
+    reload();
+  };
+
+  const visible = subs.filter((s) => showAll || s.status === "active");
+  return (
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-sm">Subscriptions</CardTitle>
+        <div className="flex gap-1.5">
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => void sync()}>
+            re-detect
+          </Button>
+          <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px]" onClick={() => setShowAll(!showAll)}>
+            {showAll ? "active only" : "show all"}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {visible.length === 0 ? (
           <p className="rounded-md border border-dashed p-3 text-center text-xs text-muted-foreground">
-            Nothing recurring detected yet.
+            No subscriptions yet — import statements then hit “re-detect”.
           </p>
         ) : (
           <ul className="divide-y text-xs">
-            {subs.map((s) => (
-              <li key={s.merchant + s.amount_minor} className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
-                <span className="truncate">{s.merchant}</span>
-                <span className="shrink-0 font-mono tabular-nums text-muted-foreground">
-                  {formatMinor(s.amount_minor)} · ×{s.occurrences}
-                  {s.next_guess ? ` · next ${s.next_guess}` : ""}
-                </span>
+            {visible.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-2 py-1.5 first:pt-0 last:pb-0">
+                <div className="min-w-0">
+                  <p className="truncate">
+                    {s.merchant}
+                    {s.status !== "active" && (
+                      <span className="ml-1.5 rounded-full border px-1.5 font-mono text-[9px] uppercase text-muted-foreground">
+                        {s.status}
+                      </span>
+                    )}
+                  </p>
+                  <p className="font-mono text-[10px] tabular-nums text-muted-foreground">
+                    ×{s.occurrences}
+                    {s.next_due ? ` · next ${s.next_due}` : ""}
+                  </p>
+                </div>
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <span className="font-mono tabular-nums">{formatMinor(s.amount_minor)}</span>
+                  {s.status === "active" ? (
+                    <>
+                      <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => void setStatus(s.id, "muted")}>
+                        mute
+                      </Button>
+                      <Button variant="ghost" size="sm" className="h-6 px-2 text-[10px] text-destructive" onClick={() => void setStatus(s.id, "cancelled")}>
+                        cancel
+                      </Button>
+                    </>
+                  ) : (
+                    <Button variant="outline" size="sm" className="h-6 px-2 text-[10px]" onClick={() => void setStatus(s.id, "active")}>
+                      restore
+                    </Button>
+                  )}
+                </div>
               </li>
             ))}
           </ul>

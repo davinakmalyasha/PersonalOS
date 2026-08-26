@@ -11,20 +11,27 @@ import (
 // Runner executes the nightly jobs and renders the digest text.
 type Runner struct {
 	Client *Client
+
+	// LowBalance config: 0 threshold disables the check.
+	LowBalanceDays      int
+	LowBalanceThreshold int64
 }
 
 // Digest is the outcome of one full pass.
 type Digest struct {
-	Paired          int
-	Subscriptions   int
-	BillsDue        []Subscription // next_guess within 7 days
-	Expiring        []ExpiringItem
-	OverBudgetLines []BudgetLine
+	Paired           int
+	Subscriptions    int
+	BillsDue         []Subscription // next_guess within 7 days
+	Expiring         []ExpiringItem
+	OverBudgetLines  []BudgetLine
+	LowBalanceOn     string // date of lowest projected balance, "" when n/a
+	LowBalanceAmount int64
 }
 
 // HasFindings reports whether anything is worth nudging about.
 func (d Digest) HasFindings() bool {
-	return d.Paired > 0 || len(d.BillsDue) > 0 || len(d.Expiring) > 0 || len(d.OverBudgetLines) > 0
+	return d.Paired > 0 || len(d.BillsDue) > 0 || len(d.Expiring) > 0 ||
+		len(d.OverBudgetLines) > 0 || d.LowBalanceOn != ""
 }
 
 // Render produces the human/agent-facing message (empty when no findings).
@@ -59,6 +66,10 @@ func (d Digest) Render(now time.Time) string {
 			fmt.Fprintf(&b, "  - %s: %.2f / %.2f\n", l.CategoryName,
 				float64(l.SpentMinor)/100, float64(l.BudgetMinor)/100)
 		}
+	}
+	if d.LowBalanceOn != "" {
+		fmt.Fprintf(&b, "• LOW BALANCE: projected %.2f on %s\n",
+			float64(d.LowBalanceAmount)/100, d.LowBalanceOn)
 	}
 
 	out := strings.TrimRight(b.String(), "\n")
@@ -106,6 +117,20 @@ func (r *Runner) Run(ctx context.Context, now time.Time) (Digest, []error) {
 		errs = append(errs, fmt.Errorf("budgets: %w", err))
 	} else {
 		d.OverBudgetLines = lines
+	}
+
+	if r.LowBalanceThreshold != 0 {
+		days := r.LowBalanceDays
+		if days <= 0 {
+			days = 14
+		}
+		fc, ferr := r.Client.LowBalance(ctx, days, r.LowBalanceThreshold)
+		if ferr != nil {
+			errs = append(errs, fmt.Errorf("forecast: %w", ferr))
+		} else if fc.Alert && fc.Lowest != nil {
+			d.LowBalanceOn = fc.Lowest.Date
+			d.LowBalanceAmount = fc.Lowest.ProjectedMinor
+		}
 	}
 
 	return d, errs

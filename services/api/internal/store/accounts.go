@@ -12,21 +12,42 @@ type Account struct {
 	Name      string `json:"name"`
 	Type      string `json:"type"`
 	Currency  string `json:"currency"`
+	Kind      string `json:"kind"` // asset | liability
+	OpeningBalanceMinor int64 `json:"opening_balance_minor"`
 	CreatedAt string `json:"created_at"`
 }
 
 type AccountWithBalance struct {
 	Account
-	BalanceMinor int64 `json:"balance_minor"`
+	BalanceMinor int64 `json:"balance_minor"` // opening + Σ transactions
 }
 
-func (f *Finance) CreateAccount(name, typ, currency string) (Account, error) {
-	if currency == "" {
-		currency = "IDR"
+type AccountCreate struct {
+	Name                string
+	Type                string
+	Currency            string
+	Kind                string
+	OpeningBalanceMinor *int64
+}
+
+func (f *Finance) CreateAccount(c AccountCreate) (Account, error) {
+	if c.Currency == "" {
+		c.Currency = "IDR"
 	}
-	a := Account{ID: NewID(), Name: name, Type: typ, Currency: currency, CreatedAt: NowRFC3339()}
-	_, err := f.DB.Exec(`INSERT INTO accounts (id,name,type,currency,created_at) VALUES (?,?,?,?,?)`,
-		a.ID, a.Name, a.Type, a.Currency, a.CreatedAt)
+	if c.Kind == "" {
+		c.Kind = "asset"
+	}
+	if c.Kind != "asset" && c.Kind != "liability" {
+		return Account{}, ErrInvalid
+	}
+	var opening int64
+	if c.OpeningBalanceMinor != nil {
+		opening = *c.OpeningBalanceMinor
+	}
+	a := Account{ID: NewID(), Name: c.Name, Type: c.Type, Currency: c.Currency,
+		Kind: c.Kind, OpeningBalanceMinor: opening, CreatedAt: NowRFC3339()}
+	_, err := f.DB.Exec(`INSERT INTO accounts (id,name,type,currency,kind,opening_balance_minor,created_at) VALUES (?,?,?,?,?,?,?)`,
+		a.ID, a.Name, a.Type, a.Currency, a.Kind, a.OpeningBalanceMinor, a.CreatedAt)
 	if isUniqueErr(err) {
 		return Account{}, ErrConflict
 	}
@@ -39,8 +60,8 @@ func (f *Finance) CreateAccount(name, typ, currency string) (Account, error) {
 
 func (f *Finance) ListAccounts() ([]AccountWithBalance, error) {
 	rows, err := f.DB.Query(`
-		SELECT a.id,a.name,a.type,a.currency,a.created_at,
-		       COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id=a.id),0)
+		SELECT a.id,a.name,a.type,a.currency,a.kind,a.opening_balance_minor,a.created_at,
+		       a.opening_balance_minor + COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id=a.id),0)
 		FROM accounts a ORDER BY a.created_at, a.id`)
 	if err != nil {
 		return nil, err
@@ -49,7 +70,7 @@ func (f *Finance) ListAccounts() ([]AccountWithBalance, error) {
 	var out []AccountWithBalance
 	for rows.Next() {
 		var a AccountWithBalance
-		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.CreatedAt, &a.BalanceMinor); err != nil {
+		if err := rows.Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.Kind, &a.OpeningBalanceMinor, &a.CreatedAt, &a.BalanceMinor); err != nil {
 			return nil, err
 		}
 		out = append(out, a)
@@ -60,34 +81,52 @@ func (f *Finance) ListAccounts() ([]AccountWithBalance, error) {
 func (f *Finance) GetAccount(id string) (AccountWithBalance, error) {
 	var a AccountWithBalance
 	err := f.DB.QueryRow(`
-		SELECT a.id,a.name,a.type,a.currency,a.created_at,
-		       COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id=a.id),0)
+		SELECT a.id,a.name,a.type,a.currency,a.kind,a.opening_balance_minor,a.created_at,
+		       a.opening_balance_minor + COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id=a.id),0)
 		FROM accounts a WHERE a.id=?`, id).
-		Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.CreatedAt, &a.BalanceMinor)
+		Scan(&a.ID, &a.Name, &a.Type, &a.Currency, &a.Kind, &a.OpeningBalanceMinor, &a.CreatedAt, &a.BalanceMinor)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AccountWithBalance{}, ErrNotFound
 	}
 	return a, err
 }
 
-func (f *Finance) UpdateAccount(id string, name, typ *string) (AccountWithBalance, error) {
+type AccountUpdate struct {
+	Name                *string
+	Type                *string
+	Kind                *string
+	OpeningBalanceMinor *int64
+}
+
+func (f *Finance) UpdateAccount(id string, u AccountUpdate) (AccountWithBalance, error) {
 	cur, err := f.GetAccount(id)
 	if err != nil {
 		return AccountWithBalance{}, err
 	}
-	if name != nil {
-		cur.Name = *name
+	if u.Name != nil {
+		cur.Name = *u.Name
 	}
-	if typ != nil {
-		cur.Type = *typ
+	if u.Type != nil {
+		cur.Type = *u.Type
 	}
-	_, err = f.DB.Exec(`UPDATE accounts SET name=?, type=? WHERE id=?`, cur.Name, cur.Type, id)
+	if u.Kind != nil {
+		if *u.Kind != "asset" && *u.Kind != "liability" {
+			return AccountWithBalance{}, ErrInvalid
+		}
+		cur.Kind = *u.Kind
+	}
+	if u.OpeningBalanceMinor != nil {
+		cur.OpeningBalanceMinor = *u.OpeningBalanceMinor
+	}
+	_, err = f.DB.Exec(`UPDATE accounts SET name=?, type=?, kind=?, opening_balance_minor=? WHERE id=?`,
+		cur.Name, cur.Type, cur.Kind, cur.OpeningBalanceMinor, id)
 	if isUniqueErr(err) {
 		return AccountWithBalance{}, ErrConflict
 	}
 	if err != nil {
 		return AccountWithBalance{}, err
 	}
+	logChange(f.DB, "account", id, "update", cur.Name)
 	return f.GetAccount(id)
 }
 

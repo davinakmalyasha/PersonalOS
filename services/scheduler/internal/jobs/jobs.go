@@ -128,3 +128,24 @@ func (c *Client) OverBudgets(ctx context.Context, month string) ([]BudgetLine, e
 	}
 	return out, nil
 }
+
+// ForecastResult is GET /finance/forecast with the alert flag.
+type ForecastResult struct {
+	Days        int    `json:"days"`
+	StartMinor  int64  `json:"start_minor"`
+	Lowest      *struct {
+		Date           string `json:"date"`
+		ProjectedMinor int64  `json:"projected_minor"`
+	} `json:"lowest"`
+	Alert bool `json:"alert"`
+}
+
+// LowBalance projects the balance and reports whether it dips below threshold.
+func (c *Client) LowBalance(ctx context.Context, days int, alertBelowMinor int64) (ForecastResult, error) {
+	var r ForecastResult
+	path := fmt.Sprintf("/v1/finance/forecast?days=%d&alert_below=%d", days, alertBelowMinor)
+	if err := c.do(ctx, http.MethodGet, path, &r); err != nil {
+		return r, err
+	}
+	return r, nil
+}

@@ -99,9 +99,11 @@ func strPtr(s string) *string { return &s }
 // ---- Accounts ----
 
 type accountReq struct {
-	Name     *string `json:"name"`
-	Type     *string `json:"type"`
-	Currency *string `json:"currency"`
+	Name                *string `json:"name"`
+	Type                *string `json:"type"`
+	Currency            *string `json:"currency"`
+	Kind                *string `json:"kind"`
+	OpeningBalanceMinor *int64  `json:"opening_balance_minor"`
 }
 
 var accountTypes = map[string]bool{"checking": true, "savings": true, "cash": true, "card": true, "wallet": true}
@@ -124,11 +126,12 @@ func (s *Server) handleCreateAccount(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid type", fieldError{"type", "one of checking|savings|cash|card|wallet"})
 		return
 	}
-	cur := ""
-	if req.Currency != nil {
-		cur = *req.Currency
-	}
-	a, err := s.finance.CreateAccount(*req.Name, typ, cur)
+	a, err := s.finance.CreateAccount(store.AccountCreate{
+		Name: *req.Name, Type: typ,
+		Currency:            derefStr(req.Currency),
+		Kind:                derefStr(req.Kind),
+		OpeningBalanceMinor: req.OpeningBalanceMinor,
+	})
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -171,7 +174,9 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "invalid type", fieldError{"type", "one of checking|savings|cash|card|wallet"})
 		return
 	}
-	a, err := s.finance.UpdateAccount(chiURLParam(r, "id"), req.Name, req.Type)
+	a, err := s.finance.UpdateAccount(chiURLParam(r, "id"), store.AccountUpdate{
+		Name: req.Name, Type: req.Type, Kind: req.Kind, OpeningBalanceMinor: req.OpeningBalanceMinor,
+	})
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -179,6 +184,13 @@ func (s *Server) handleUpdateAccount(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, a)
+}
+
+func derefStr(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func (s *Server) handleDeleteAccount(w http.ResponseWriter, r *http.Request) {
@@ -313,6 +325,8 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 		Pattern    string `json:"pattern"`
 		CategoryID string `json:"category_id"`
 		Priority   *int   `json:"priority"`
+		AmountMin  *int64 `json:"amount_min"`
+		AmountMax  *int64 `json:"amount_max"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
@@ -328,7 +342,7 @@ func (s *Server) handleCreateRule(w http.ResponseWriter, r *http.Request) {
 	if req.Priority != nil {
 		prio = *req.Priority
 	}
-	rule, err := s.finance.CreateRule(req.Pattern, req.CategoryID, prio)
+	rule, err := s.finance.CreateRule(req.Pattern, req.CategoryID, prio, req.AmountMin, req.AmountMax)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -359,12 +373,14 @@ func (s *Server) handleUpdateRule(w http.ResponseWriter, r *http.Request) {
 		Pattern    *string `json:"pattern"`
 		CategoryID *string `json:"category_id"`
 		Priority   *int    `json:"priority"`
+		AmountMin  **int64 `json:"amount_min"`
+		AmountMax  **int64 `json:"amount_max"`
 	}
 	if err := decodeJSON(r, &req, 0); err != nil {
 		fail(w, http.StatusBadRequest, "bad json", fieldError{"body", err.Error()})
 		return
 	}
-	rule, err := s.finance.UpdateRule(chiURLParam(r, "id"), req.Pattern, req.CategoryID, req.Priority)
+	rule, err := s.finance.UpdateRule(chiURLParam(r, "id"), req.Pattern, req.CategoryID, req.Priority, req.AmountMin, req.AmountMax)
 	if err != nil {
 		if !mapStoreErr(w, err) {
 			fail(w, http.StatusInternalServerError, err.Error())
@@ -382,6 +398,18 @@ func (s *Server) handleDeleteRule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// POST /rules/{id}/apply — backfill: re-categorize matching history.
+func (s *Server) handleApplyRule(w http.ResponseWriter, r *http.Request) {
+	n, err := s.finance.ApplyBackfill(chiURLParam(r, "id"))
+	if err != nil {
+		if !mapStoreErr(w, err) {
+			fail(w, http.StatusInternalServerError, err.Error())
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]interface{}{"updated": n})
 }
 
 // ---- Budgets ----

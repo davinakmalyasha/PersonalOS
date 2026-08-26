@@ -201,6 +201,35 @@ export type UpcomingBill = {
   occurrences: number;
 };
 
+export type Subscription = {
+  id: string;
+  merchant: string;
+  amount_minor: number;
+  cadence: string;
+  next_due: string | null;
+  status: "active" | "muted" | "cancelled";
+  occurrences: number;
+};
+
+export type SafeToSpend = {
+  month: string;
+  income_mtd_minor: number;
+  spend_mtd_minor: number;
+  budget_left_minor: number;
+  bills_ahead_minor: number;
+  safe_to_spend_minor: number;
+};
+
+export type ForecastPoint = { date: string; projected_minor: number };
+
+export type Forecast = {
+  days: number;
+  start_minor: number;
+  avg_daily_net_minor: number;
+  lowest?: { date: string; projected_minor: number } | null;
+  points: ForecastPoint[];
+};
+
 export type TagCount = { tag: string; count: number };
 
 export type ReadingEntry = {

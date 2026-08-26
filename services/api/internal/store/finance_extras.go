@@ -166,14 +166,37 @@ type NetWorthPoint struct {
 }
 
 type NetWorth struct {
-	Points   []NetWorthPoint       `json:"points"`
-	Accounts []map[string]interface{} `json:"accounts"` // latest per-account balance
+	Points          []NetWorthPoint          `json:"points"`
+	Accounts        []map[string]interface{} `json:"accounts"` // latest per-account balance
+	AssetsMinor     int64                    `json:"assets_minor"`
+	LiabilitiesMinor int64                   `json:"liabilities_minor"`
+	NetMinor        int64                    `json:"net_minor"`
 }
 
 // NetWorthSeries walks all transactions in date order accumulating per-account
-// balances, emitting the portfolio total at each date where anything moved.
+// balances (seeded with opening balances), emitting the portfolio total at
+// each date where anything moved. Liability accounts subtract from net.
 func (f *Finance) NetWorthSeries() (NetWorth, error) {
 	out := NetWorth{Points: []NetWorthPoint{}, Accounts: []map[string]interface{}{}}
+
+	kinds := map[string]string{}
+	openings := map[string]int64{}
+	acctRows, err := f.DB.Query(`SELECT id, kind, opening_balance_minor FROM accounts`)
+	if err != nil {
+		return out, err
+	}
+	for acctRows.Next() {
+		var id, kind string
+		var opening int64
+		if err := acctRows.Scan(&id, &kind, &opening); err != nil {
+			acctRows.Close()
+			return out, err
+		}
+		kinds[id] = kind
+		openings[id] = opening
+	}
+	acctRows.Close()
+
 	rows, err := f.DB.Query(
 		`SELECT date, account_id, amount FROM transactions ORDER BY date ASC, created_at ASC`)
 	if err != nil {
@@ -182,6 +205,23 @@ func (f *Finance) NetWorthSeries() (NetWorth, error) {
 	defer rows.Close()
 
 	balances := map[string]int64{}
+	for id, op := range openings {
+		balances[id] = op
+	}
+	sign := func(id string) int64 {
+		if kinds[id] == "liability" {
+			return -1
+		}
+		return 1
+	}
+	netWorth := func() int64 {
+		var total int64
+		for id, v := range balances {
+			total += sign(id) * v
+		}
+		return total
+	}
+
 	var points []NetWorthPoint
 	lastDate := ""
 	for rows.Next() {
@@ -193,19 +233,21 @@ func (f *Finance) NetWorthSeries() (NetWorth, error) {
 		// Emit the previous date's close BEFORE applying the new date's txn,
 		// so each point reflects end-of-day balances for its date.
 		if lastDate != "" && date != lastDate {
-			points = append(points, NetWorthPoint{Date: lastDate, TotalMinor: sumBalances(balances)})
+			points = append(points, NetWorthPoint{Date: lastDate, TotalMinor: netWorth()})
 		}
 		balances[accountID] += amount
 		lastDate = date
 	}
 	if lastDate != "" {
-		points = append(points, NetWorthPoint{Date: lastDate, TotalMinor: sumBalances(balances)})
+		points = append(points, NetWorthPoint{Date: lastDate, TotalMinor: netWorth()})
+	} else if len(openings) > 0 {
+		points = append(points, NetWorthPoint{Date: time.Now().UTC().Format("2006-01-02"), TotalMinor: netWorth()})
 	}
 	out.Points = points
 
 	for accountID, bal := range balances {
 		out.Accounts = append(out.Accounts, map[string]interface{}{
-			"account_id": accountID, "balance_minor": bal,
+			"account_id": accountID, "balance_minor": bal, "kind": kinds[accountID],
 		})
 	}
 	sort.Slice(out.Accounts, func(i, j int) bool {
@@ -213,15 +255,16 @@ func (f *Finance) NetWorthSeries() (NetWorth, error) {
 		b, _ := out.Accounts[j]["account_id"].(string)
 		return a < b
 	})
-	return out, rows.Err()
-}
 
-func sumBalances(m map[string]int64) int64 {
-	var total int64
-	for _, v := range m {
-		total += v
+	for id, bal := range balances {
+		if sign(id) < 0 {
+			out.LiabilitiesMinor += bal
+		} else {
+			out.AssetsMinor += bal
+		}
 	}
-	return total
+	out.NetMinor = out.AssetsMinor - out.LiabilitiesMinor
+	return out, rows.Err()
 }
 
 // ---- Upcoming bills (derived from recurring detection) ----
