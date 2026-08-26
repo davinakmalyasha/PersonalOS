@@ -246,6 +246,19 @@
 **Accepts:** a USD account with a rate set converts its opening and transactions into the IDR total for net-worth/summary; without a rate everything behaves exactly as before.
 
 ---
+## Phase 13b - Receipt attachments (DONE)
+
+**Features:**
+
+- `transactions.receipt_file` / `receipt_name` columns (migration 0015); files live on disk under `ATTACHMENTS_DIR` (default `./data/attachments`)
+- `POST /transactions/{id}/receipt` — multipart upload (field `file`), pdf/jpg/jpeg/png/webp/heic only, 10 MiB cap, random hex file name on disk, original name preserved in the row
+- `GET /transactions/{id}/receipt` — serves bytes back with proper Content-Type + original filename
+- `DELETE /transactions/{id}/receipt` — clears the row and removes the file
+- Transaction JSON gains `receipt_name`; MCP `manage_receipt` (attach via base64 / get / remove) — 66 tools total
+
+**Accepts:** upload → GET returns identical bytes → DELETE removes both row and file; non-image/pdf extensions are rejected with 400.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).

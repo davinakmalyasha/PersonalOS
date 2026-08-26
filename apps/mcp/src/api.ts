@@ -96,6 +96,33 @@ export class PersonalOSClient {
     return res.json();
   }
 
+  // Receipt upload is multipart/form-data (phase 13b).
+  async uploadReceipt(txnId: string, filename: string, bytes: Uint8Array): Promise<unknown> {
+    const ext = filename.split(".").pop()?.toLowerCase() ?? "";
+    const types: Record<string, string> = {
+      pdf: "application/pdf", jpg: "image/jpeg", jpeg: "image/jpeg",
+      png: "image/png", webp: "image/webp", heic: "image/heic",
+    };
+    const form = new FormData();
+    form.set("file", new Blob([bytes as BlobPart], { type: types[ext] ?? "application/octet-stream" }), filename);
+    const res = await fetch(new URL(`/v1/transactions/${txnId}/receipt`, this.baseUrl), {
+      method: "POST",
+      headers: this.headers(false),
+      body: form,
+    });
+    if (!res.ok) await this.parseError(res);
+    return res.json();
+  }
+
+  // Receipt download returns raw bytes + content type (phase 13b).
+  async getReceipt(txnId: string): Promise<{ bytes: Uint8Array; contentType: string }> {
+    const res = await fetch(new URL(`/v1/transactions/${txnId}/receipt`, this.baseUrl), {
+      headers: this.headers(undefined),
+    });
+    if (!res.ok) await this.parseError(res);
+    return { bytes: new Uint8Array(await res.arrayBuffer()), contentType: res.headers.get("content-type") ?? "" };
+  }
+
   async health(): Promise<boolean> {
     try {
       const res = await fetch(new URL("/healthz", this.baseUrl));

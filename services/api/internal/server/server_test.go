@@ -11,7 +11,7 @@ import (
 
 func TestHealthzNoDB(t *testing.T) {
 	logger := zerolog.Nop()
-	h := New(nil, logger, "")
+	h := New(nil, logger, "", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	rec := httptest.NewRecorder()
@@ -31,7 +31,7 @@ func TestHealthzNoDB(t *testing.T) {
 
 func TestOpenAPI(t *testing.T) {
 	logger := zerolog.Nop()
-	h := New(nil, logger, "")
+	h := New(nil, logger, "", "")
 
 	req := httptest.NewRequest(http.MethodGet, "/openapi.json", nil)
 	rec := httptest.NewRecorder()
@@ -54,7 +54,7 @@ func TestOpenAPI(t *testing.T) {
 
 func TestBearerAuth(t *testing.T) {
 	logger := zerolog.Nop()
-	h := New(nil, logger, "secret")
+	h := New(nil, logger, "secret", "")
 
 	// No token -> 401
 	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)

@@ -20,18 +20,19 @@ var openapiSpec []byte
 
 // Server holds dependencies for all handlers.
 type Server struct {
-	db        *sql.DB
-	logger    zerolog.Logger
-	finance   *store.Finance
-	planner   *store.Planner
-	knowledge *store.Knowledge
-	items     *store.Items
-	health    *store.Health
-	activity  *store.ActivityStore
+	db             *sql.DB
+	logger         zerolog.Logger
+	finance        *store.Finance
+	planner        *store.Planner
+	knowledge      *store.Knowledge
+	items          *store.Items
+	health         *store.Health
+	activity       *store.ActivityStore
+	attachmentsDir string
 }
 
-func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string) http.Handler {
-	s := &Server{db: sqlDB, logger: logger}
+func New(sqlDB *sql.DB, logger zerolog.Logger, apiToken string, attachmentsDir string) http.Handler {
+	s := &Server{db: sqlDB, logger: logger, attachmentsDir: attachmentsDir}
 	if sqlDB != nil {
 		s.finance = &store.Finance{DB: sqlDB}
 		s.planner = &store.Planner{DB: sqlDB}

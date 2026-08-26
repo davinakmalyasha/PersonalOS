@@ -12,6 +12,8 @@ type Config struct {
 	DBPath   string
 	LogLevel string
 	APIToken string
+
+	AttachmentsDir string // where receipt files are stored
 }
 
 func Load() Config {
@@ -23,6 +25,8 @@ func Load() Config {
 		DBPath:   envOr("DB_PATH", "./data/personal-os.db"),
 		LogLevel: strings.ToLower(envOr("LOG_LEVEL", "info")),
 		APIToken: os.Getenv("API_TOKEN"),
+
+		AttachmentsDir: envOr("ATTACHMENTS_DIR", "./data/attachments"),
 	}
 
 	if cfg.Port == "" {

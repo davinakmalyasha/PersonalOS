@@ -298,7 +298,7 @@ func TestResurfaceOnThisDay(t *testing.T) {
 		lastYear, lastYear); err != nil {
 		t.Fatalf("seed: %v", err)
 	}
-	h := New(sqlDB, zerolog.Nop(), "")
+	h := New(sqlDB, zerolog.Nop(), "", t.TempDir())
 
 	rec := doJSON(t, h, http.MethodGet, "/v1/knowledge/resurface", nil)
 	if rec.Code != http.StatusOK {

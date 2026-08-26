@@ -39,7 +39,7 @@ func main() {
 	}
 	logger.Info().Str("dir", migrationsDir).Msg("migrations applied")
 
-	handler := server.New(sqlDB, logger, cfg.APIToken)
+	handler := server.New(sqlDB, logger, cfg.APIToken, cfg.AttachmentsDir)
 
 	addr := fmt.Sprintf(":%s", cfg.Port)
 	srv := &http.Server{

@@ -973,6 +973,35 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   // ---------- Phase 13a: multi-currency fx ----------
 
+  // ---------- Phase 13b: receipt attachments ----------
+
+  server.tool(
+    "manage_receipt",
+    "Receipt attachments on transactions. action=attach (filename + content_base64; pdf/jpg/png/webp/heic, max 10 MiB) | get (returns base64 + content_type) | remove.",
+    {
+      action: z.enum(["attach", "get", "remove"]),
+      txn_id: str(),
+      filename: optStr(),
+      content_base64: optStr(),
+    },
+    async (a: ToolArgs) => {
+      const txnId = String(a.txn_id);
+      switch (a.action) {
+        case "attach": {
+          if (!a.filename || !a.content_base64) throw new Error("filename + content_base64 required");
+          const bytes = Uint8Array.from(Buffer.from(String(a.content_base64), "base64"));
+          return run(() => api.uploadReceipt(txnId, String(a.filename), bytes));
+        }
+        case "get": {
+          const r = await api.getReceipt(txnId);
+          return { content: [{ type: "text" as const, text: JSON.stringify({ content_base64: Buffer.from(r.bytes).toString("base64"), content_type: r.contentType }) }] };
+        }
+        default:
+          return run(() => api.del(`/v1/transactions/${txnId}/receipt`).then(() => ({ status: "removed" })));
+      }
+    },
+  );
+
   server.tool(
     "manage_fx",
     "Exchange rates for multi-currency reporting. action=list|set|set_base. Rates multiply STORED MINOR UNITS of the source currency into base minor units (e.g. USD cents -> IDR ≈ 160 when 1 USD = 16,000 IDR). Missing rate = 1:1.",

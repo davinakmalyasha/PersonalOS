@@ -49,7 +49,16 @@
           "category_name": { "type": ["string", "null"] },
           "tags": { "type": "array", "items": { "type": "string" } },
           "notes": { "type": "string" },
+          "receipt_name": { "type": ["string", "null"], "description": "original file name when a receipt is attached" },
           "created_at": { "type": "string" }
+        }
+      },
+      "ExchangeRate": {
+        "type": "object",
+        "properties": {
+          "code": { "type": "string" },
+          "rate_to_base": { "type": "number", "description": "multiplies stored minor units of code into base minor units" },
+          "updated_at": { "type": "string" }
         }
       },
       "Subscription": {
@@ -661,6 +670,43 @@
         "operationId": "exportTransactionsCSV",
         "summary": "CSV export of transactions (account_id/from/to filters)",
         "responses": { "200": { "description": "text/csv attachment" } }
+      }
+    },
+    "/v1/finance/fx": {
+      "get": {
+        "operationId": "listFxRates",
+        "summary": "Exchange rates relative to the base currency (rate_to_base multiplies stored minor units; missing rate = 1:1)",
+        "responses": { "200": { "description": "{base, rates: ExchangeRate[]}" } }
+      },
+      "put": {
+        "operationId": "upsertFxRate",
+        "summary": "Create/update a rate {code, rate_to_base>0}",
+        "responses": { "200": { "description": "{base, rates}" }, "400": { "description": "validation" } }
+      }
+    },
+    "/v1/finance/fx/base": {
+      "put": {
+        "operationId": "setFxBaseCurrency",
+        "summary": "Set the base currency {code}",
+        "responses": { "200": { "description": "{base, rates}" }, "400": { "description": "validation" } }
+      }
+    },
+    "/v1/transactions/{id}/receipt": {
+      "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "post": {
+        "operationId": "uploadReceipt",
+        "summary": "Attach a receipt (multipart field 'file'; pdf/jpg/jpeg/png/webp/heic, max 10 MiB)",
+        "responses": { "200": { "description": "updated transaction" }, "400": { "description": "bad file/type" }, "404": { "description": "missing transaction" } }
+      },
+      "get": {
+        "operationId": "getReceipt",
+        "summary": "Download the attached receipt file",
+        "responses": { "200": { "description": "file bytes" }, "404": { "description": "no receipt" } }
+      },
+      "delete": {
+        "operationId": "deleteReceipt",
+        "summary": "Remove the attachment (row + disk file)",
+        "responses": { "200": { "description": "{status: removed}" }, "404": { "description": "no receipt" } }
       }
     },
     "/v1/finance/bills": {

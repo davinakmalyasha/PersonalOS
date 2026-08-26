@@ -22,6 +22,8 @@ type Transaction struct {
 	Tags           []string `json:"tags"`
 	Notes          string   `json:"notes"`
 	IsTransfer     bool     `json:"is_transfer"`
+	ReceiptFile    *string  `json:"-"` // relative name on disk
+	ReceiptName    *string  `json:"receipt_name,omitempty"`
 	CreatedAt      string   `json:"created_at"`
 
 	tagsRaw string
@@ -86,12 +88,13 @@ func (f *Finance) CreateTransaction(accountID string, amount int64, date, mercha
 func txnScan(dest *Transaction) []interface{} {
 	return []interface{}{&dest.ID, &dest.AccountID, &dest.AmountMinor, &dest.Currency,
 		&dest.Date, &dest.Merchant, &dest.RawDescription, &dest.CategoryID,
-		&dest.CategoryName, &dest.tagsRaw, &dest.Notes, &dest.IsTransfer, &dest.CreatedAt}
+		&dest.CategoryName, &dest.tagsRaw, &dest.Notes, &dest.IsTransfer,
+		&dest.ReceiptFile, &dest.ReceiptName, &dest.CreatedAt}
 }
 
 const txnSelect = `
 	SELECT t.id,t.account_id,t.amount,t.currency,t.date,t.merchant,t.raw_description,
-	       t.category_id,c.name,t.tags,t.notes,t.is_transfer,t.created_at
+	       t.category_id,c.name,t.tags,t.notes,t.is_transfer,t.receipt_file,t.receipt_name,t.created_at
 	FROM transactions t LEFT JOIN categories c ON c.id=t.category_id`
 
 func (f *Finance) GetTransaction(id string) (Transaction, error) {

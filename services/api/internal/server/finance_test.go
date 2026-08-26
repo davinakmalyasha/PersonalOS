@@ -36,7 +36,7 @@ func newTestAPI(t *testing.T) http.Handler {
 	if err := db.Migrate(sqlDB, "../../migrations"); err != nil {
 		t.Fatalf("migrate: %v", err)
 	}
-	return New(sqlDB, zerolog.Nop(), "")
+	return New(sqlDB, zerolog.Nop(), "", filepath.Join(dir, "attachments"))
 }
 
 func doJSON(t *testing.T, h http.Handler, method, path string, body interface{}) *httptest.ResponseRecorder {
@@ -236,7 +236,7 @@ func TestAuthBlocksFinanceRoutes(t *testing.T) {
 	if err := db.Migrate(sqlDB, "../../migrations"); err != nil {
 		t.Fatal(err)
 	}
-	h := New(sqlDB, zerolog.Nop(), "secret-token")
+	h := New(sqlDB, zerolog.Nop(), "secret-token", t.TempDir())
 
 	rec := doJSON(t, h, http.MethodGet, "/v1/accounts", nil)
 	if rec.Code != http.StatusUnauthorized {

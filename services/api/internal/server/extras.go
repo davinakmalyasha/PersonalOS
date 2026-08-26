@@ -57,6 +57,11 @@ func (s *Server) mountExtras(r chi.Router) {
 		r.Put("/base", s.handleSetBaseCurrency)
 	})
 	r.Get("/transactions/export.csv", s.handleExportTransactionsCSV)
+
+	// Phase 13b: receipt attachments.
+	r.Post("/transactions/{id}/receipt", s.handleUploadReceipt)
+	r.Get("/transactions/{id}/receipt", s.handleGetReceipt)
+	r.Delete("/transactions/{id}/receipt", s.handleDeleteReceipt)
 }
 
 // ---- Goals ----
