@@ -15,6 +15,10 @@ type Runner struct {
 	// LowBalance config: 0 threshold disables the check.
 	LowBalanceDays      int
 	LowBalanceThreshold int64
+
+	// ICSUrl: when set, the runner asks the API to import this calendar
+	// each pass (idempotent by UID).
+	ICSUrl string
 }
 
 // Digest is the outcome of one full pass.
@@ -24,6 +28,7 @@ type Digest struct {
 	BillsDue         []Subscription // next_guess within 7 days
 	Expiring         []ExpiringItem
 	OverBudgetLines  []BudgetLine
+	ICSImported      int
 	LowBalanceOn     string // date of lowest projected balance, "" when n/a
 	LowBalanceAmount int64
 }
@@ -66,6 +71,9 @@ func (d Digest) Render(now time.Time) string {
 			fmt.Fprintf(&b, "  - %s: %.2f / %.2f\n", l.CategoryName,
 				float64(l.SpentMinor)/100, float64(l.BudgetMinor)/100)
 		}
+	}
+	if d.ICSImported > 0 {
+		fmt.Fprintf(&b, "• calendar events imported: %d\n", d.ICSImported)
 	}
 	if d.LowBalanceOn != "" {
 		fmt.Fprintf(&b, "• LOW BALANCE: projected %.2f on %s\n",
@@ -117,6 +125,15 @@ func (r *Runner) Run(ctx context.Context, now time.Time) (Digest, []error) {
 		errs = append(errs, fmt.Errorf("budgets: %w", err))
 	} else {
 		d.OverBudgetLines = lines
+	}
+
+	if r.ICSUrl != "" {
+		res, ierr := r.Client.ImportICS(ctx, r.ICSUrl)
+		if ierr != nil {
+			errs = append(errs, fmt.Errorf("ics import: %w", ierr))
+		} else {
+			d.ICSImported = res.Imported
+		}
 	}
 
 	if r.LowBalanceThreshold != 0 {

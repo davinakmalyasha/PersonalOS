@@ -691,6 +691,13 @@
         "responses": { "200": { "description": "{base, rates}" }, "400": { "description": "validation" } }
       }
     },
+    "/v1/events/import.ics": {
+      "post": {
+        "operationId": "importICS",
+        "summary": "Import VEVENTs from multipart 'file', JSON {text}, or JSON {url} (http(s), fetched server-side). Idempotent by UID; RRULEs degrade to first occurrence; TZID times read as UTC.",
+        "responses": { "200": { "description": "{imported, skipped, total}" }, "400": { "description": "not ics / bad input" }, "502": { "description": "url fetch failed" } }
+      }
+    },
     "/v1/transactions/{id}/receipt": {
       "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }],
       "post": {

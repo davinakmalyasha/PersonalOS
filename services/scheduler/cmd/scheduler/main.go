@@ -34,6 +34,7 @@ func main() {
 	runner := &jobs.Runner{Client: jobs.NewClient(cfg.APIURL, cfg.APIToken)}
 	runner.LowBalanceDays = cfg.LowBalanceDays
 	runner.LowBalanceThreshold = cfg.LowBalanceThreshold
+	runner.ICSUrl = cfg.ICSUrl
 	interval := time.Duration(cfg.IntervalSeconds) * time.Second
 
 	logger.Info().

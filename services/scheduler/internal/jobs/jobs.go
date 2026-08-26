@@ -149,3 +149,44 @@ func (c *Client) LowBalance(ctx context.Context, days int, alertBelowMinor int64
 	}
 	return r, nil
 }
+
+// doBody posts a JSON body like do, for endpoints that need one.
+func (c *Client) doBody(ctx context.Context, method, path string, body io.Reader, contentType string, out interface{}) error {
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
+	if err != nil {
+		return err
+	}
+	if c.Token != "" {
+		req.Header.Set("Authorization", "Bearer "+c.Token)
+	}
+	req.Header.Set("Content-Type", contentType)
+	res, err := c.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(res.Body, 256))
+		return fmt.Errorf("%s %s: status %d: %s", method, path, res.StatusCode, strings.TrimSpace(string(b)))
+	}
+	if out == nil {
+		return nil
+	}
+	return json.NewDecoder(res.Body).Decode(out)
+}
+
+// ICSImportResult is POST /events/import.ics.
+type ICSImportResult struct {
+	Imported int `json:"imported"`
+	Skipped  int `json:"skipped"`
+}
+
+// ImportICS makes the API fetch a remote ICS URL and upsert its events.
+func (c *Client) ImportICS(ctx context.Context, url string) (ICSImportResult, error) {
+	var r ICSImportResult
+	body := fmt.Sprintf(`{"url":%q}`, url)
+	if err := c.doBody(ctx, http.MethodPost, "/v1/events/import.ics", strings.NewReader(body), "application/json", &r); err != nil {
+		return r, err
+	}
+	return r, nil
+}

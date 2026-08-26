@@ -973,6 +973,19 @@ export function registerTools(server: McpServer, api: PersonalOSClient): void {
 
   // ---------- Phase 13a: multi-currency fx ----------
 
+  // ---------- Phase 13c: ICS calendar import ----------
+
+  server.tool(
+    "import_ics",
+    "Import events from an iCalendar source. Pass raw ics_text OR an http(s) ics_url (fetched server-side, 2 MiB cap). Idempotent: known UIDs are skipped. RRULEs degrade to first occurrence; TZID times read as UTC.",
+    { ics_text: optStr(), ics_url: optStr() },
+    async (a: ToolArgs) => {
+      if (!a.ics_text && !a.ics_url) throw new Error("ics_text or ics_url required");
+      const body = a.ics_text ? { text: String(a.ics_text) } : { url: String(a.ics_url) };
+      return run(() => api.post("/v1/events/import.ics", body));
+    },
+  );
+
   // ---------- Phase 13b: receipt attachments ----------
 
   server.tool(

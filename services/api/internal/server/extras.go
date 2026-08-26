@@ -62,6 +62,9 @@ func (s *Server) mountExtras(r chi.Router) {
 	r.Post("/transactions/{id}/receipt", s.handleUploadReceipt)
 	r.Get("/transactions/{id}/receipt", s.handleGetReceipt)
 	r.Delete("/transactions/{id}/receipt", s.handleDeleteReceipt)
+
+	// Phase 13c: ICS import.
+	r.Post("/events/import.ics", s.handleImportICS)
 }
 
 // ---- Goals ----

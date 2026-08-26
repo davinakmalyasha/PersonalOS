@@ -22,8 +22,9 @@ type Config struct {
 	TelegramChatID   string
 	DiscordWebhook   string
 
-	LowBalanceDays      int   // forecast horizon for the low-balance check (default 14)
-	LowBalanceThreshold int64 // minor units; 0 disables the check
+	LowBalanceDays      int    // forecast horizon for the low-balance check (default 14)
+	LowBalanceThreshold int64  // minor units; 0 disables the check
+	ICSUrl              string // remote calendar to import each pass; "" disables
 }
 
 func Load() Config {
@@ -42,6 +43,7 @@ func Load() Config {
 
 		LowBalanceDays:      envInt("SCHED_LOW_BALANCE_DAYS", 14),
 		LowBalanceThreshold: envIntOr64("SCHED_LOW_BALANCE_MINOR", 0),
+		ICSUrl:              strings.TrimSpace(os.Getenv("EVENTS_ICS_URL")),
 	}
 }
 

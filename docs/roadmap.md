@@ -259,6 +259,20 @@
 **Accepts:** upload → GET returns identical bytes → DELETE removes both row and file; non-image/pdf extensions are rejected with 400.
 
 ---
+## Phase 13c - ICS calendar import (DONE)
+
+**Features:**
+
+- Minimal iCalendar parser (`internal/domain/planner/icsparse.go`): unfolds continuation lines, extracts VEVENT SUMMARY/DTSTART/DTEND/LOCATION/DESCRIPTION/UID, unescapes `\n`/`\,`/`\;`
+- Graceful degradation: RRULEs are ignored (first occurrence kept, noted in the description); `TZID` times are read as UTC (documented limitation); `VALUE=DATE` becomes midnight-UTC all-day events
+- `external_uid` column + unique index on events; imports are **idempotent** — known UIDs are skipped, UID-less events always import
+- `POST /v1/events/import.ics` accepts multipart `file`, JSON `{"text": ...}` or JSON `{"url": ...}` (fetched server-side, 10s timeout, 2 MiB cap, http/https only)
+- Scheduler: set `EVENTS_ICS_URL` and every nightly pass imports that calendar before the digest (`imported: N` shows up in the message)
+- MCP `import_ics` (text or URL) — 67 tools total
+
+**Accepts:** importing the same file twice yields `{imported: 2, skipped: 0}` then `{imported: 0, skipped: 2}`; events appear in `/events` windows with the `ics` tag.
+
+---
 ## Versioning
 
 `v0.1` = Phase 1 done. `v0.2` = finance. `v1.0` = Phase 7 done. `v1.1` = live board + agentic depth (Phases 8–9).
